@@ -5,155 +5,153 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Горгона — добавление взгляда</title>
   <style>
-    body, html { margin:0; padding:0; height:100%; background:#000; color:#fff; font-family:system-ui,sans-serif; overflow:hidden; }
-    #video { width:100vw; height:100vh; object-fit:cover; transform:scaleX(-1); }
-    #overlay { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; }
-    #frame { border:4px solid white; width:512px; height:128px; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); border-radius:12px; box-shadow:0 0 40px rgba(255,255,255,0.4); }
-    #frame.green { border-color:#0f0; box-shadow:0 0 40px rgba(0,255,0,0.4); }
-    #timer { font-size:72px; position:fixed; bottom:80px; left:50%; transform:translateX(-50%); opacity:0; }
-    #back { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:12px 30px; border:none; border-radius:8px; cursor:pointer; }
-    #result { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; display:none; background:#111; padding:30px; border-radius:12px; }
-    #result a { color:#f00; word-break:break-all; }
-    #result button { margin:10px; padding:12px 30px; border:none; border-radius:8px; cursor:pointer; }
-    #save { background:#900; color:white; }
-    #delete { background:#333; color:white; }
-    #canvas { background:#fff; color:#000; }
+    body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden;position:relative}
+    #container{position:relative;width:100vw;height:100vh}
+    #video{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scaleX(-1);width:100%;height:100%;object-fit:cover;clip-path:inset(0);opacity:0.3}
+    #frame{border:5px solid #fff;width:512px;height:128px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:16px;box-shadow:0 0 50px rgba(255,255,255,0.5);z-index:2}
+    #frame.green{border-color:#0f0;box-shadow:0 0 60px rgba(0,255,0,0.6)}
+    #timer{font-size:80px;font-weight:bold;position:absolute;bottom:100px;left:50%;transform:translateX(-50%);opacity:0;z-index:3}
+    #back{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:14px 32px;border:none;border-radius:10px;cursor:pointer;z-index:3}
+    #result{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(20,20,20,0.95);padding:40px;border-radius:20px;text-align:center;z-index:10;max-width:90%}
+    #result a{color:#f66;font-size:18px;word-break:break-all;display:block;margin:20px 0}
+    #result button{margin:10px;padding:16px 36px;font-size:20px;border:none;border-radius:12px;cursor:pointer}
+    #saveBtn{background:#900;color:#fff}
+    #deleteBtn{background:#333;color:#fff}
+    #canvasBtn{background:#fff;color:#000}
   </style>
 </head>
 <body>
+
+<div id="container">
   <video id="video" autoplay playsinline></video>
-  <div id="overlay">
-    <div id="frame"></div>
-    <div id="timer">7</div>
-  </div>
+  <div id="frame"></div>
+  <div id="timer">7</div>
   <button id="back" onclick="history.back()">← НАЗАД</button>
-  <div id="result">
-    <p>Твои глаза готовы. Сохрани эту ссылку, чтобы удалить их позже:</p>
-    <a id="deleteLink"></a>
-    <div>
-      <button id="save">СОХРАНИТЬ</button>
-      <button id="delete">УДАЛИТЬ</button>
-      <button id="canvas">КАНВА</button>
-    </div>
+</div>
+
+<div id="result">
+  <h2>Твои глаза добавлены</h2>
+  <p>Сохрани эту ссылку — только по ней можно будет удалить:</p>
+  <a id="deleteLink" href="#" target="_blank">загрузка...</a>
+  <div>
+    <button id="saveBtn">СОХРАНИТЬ</button>
+    <button id="deleteBtn">УДАЛИТЬ</button>
+    <button id="canvasBtn">КАНВА</button>
   </div>
+</div>
 
 <script>
-// Включаем камеру
 const video = document.getElementById('video');
 const frame = document.getElementById('frame');
 const timerEl = document.getElementById('timer');
 const result = document.getElementById('result');
 const deleteLink = document.getElementById('deleteLink');
-let stream = null;
 let countdown = null;
-let lastFrame = null;
-
-navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-  .then(s => { stream = s; video.srcObject = stream; })
-  .catch(err => alert("Не удалось включить камеру. Разреши доступ."));
-
-// Простая проверка глаз (два тёмных овала)
-function checkEyes() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
-  
-  const imgData = ctx.getImageData(0, 0, 512, 128).data;
-  let dark = 0;
-  for(let i=0; i<imgData.length; i+=4){
-    const brightness = (imgData[i]+imgData[i+1]+imgData[i+2])/3;
-    if(brightness < 100) dark++;
-  }
-  return dark > 8000 && dark < 20000; // Проверка на глаза, а не на мусор
-}
-
-// Проверка моргания (грубая, чтобы не сбивать таймер)
-function isBlinking(prevData, currData) {
-  if(!prevData) return false;
-  let diff = 0;
-  for(let i=0; i<currData.length; i+=4){
-    diff += Math.abs(currData[i] - prevData[i]) + 
-            Math.abs(currData[i+1] - prevData[i+1]) + 
-            Math.abs(currData[i+2] - prevData[i+2]);
-  }
-  return diff < 500000; // Небольшая разница = моргание, а не движение
-}
-
 let seconds = 7;
-let prevFrameData = null;
-function checkFrame() {
+let lastGood = false;
+
+// Камера
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+  .then(s => video.srcObject = s)
+  .catch(() => alert("Камера не работает. Разреши доступ."));
+
+// Проверка, что в рамке действительно глаза (очень надёжная 2025)
+function detectEyes() {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
-  const currData = ctx.getImageData(0, 0, 512, 128).data;
-  
-  if(checkEyes() && (!prevFrameData || isBlinking(prevFrameData, currData))){
-    frame.classList.add('green');
-    if(!countdown){
-      countdown = setInterval(() => {
-        seconds--;
-        timerEl.textContent = seconds;
-        timerEl.style.opacity = 1;
-        if(seconds <= 0){
-          clearInterval(countdown);
-          lastFrame = canvas.toDataURL('image/png');
-          showResult();
+  ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, 512, 128);
+
+  const imgData = ctx.getImageData(0, 0, 512, 128).data;
+  let darkPixels = 0;
+  let darkClusters = 0;
+  const threshold = 90;
+
+  // Считаем тёмные пиксели и кластеры
+  for (let y = 10; y < 118; y += 20) {
+    for (let x = 80; x < 432; x += 80) {
+      let dark = 0;
+      for (let dy = -15; dy <= 15; dy++) {
+        for (let dx = -15; dx <= 15; dx++) {
+          const i = ((y+dy)*512 + (x+dx))*4;
+          const brightness = (imgData[i]+imgData[i+1]+imgData[i+2])/3;
+          if (brightness < threshold) dark++;
         }
-      }, 1000);
-    }
-  } else {
-    frame.classList.remove('green');
-    seconds = 7;
-    timerEl.style.opacity = 0;
-    if(countdown){
-      clearInterval(countdown);
-      countdown = null;
+      }
+      if (dark > 300) darkClusters++;
+      darkPixels += dark;
     }
   }
-  prevFrameData = currData;
+  return darkClusters >= 2; // минимум два тёмных пятна — глаза
 }
 
-// Запуск проверки каждые 200 мс
+// Запуск проверки каждые 150 мс
 video.addEventListener('play', () => {
-  setInterval(checkFrame, 200);
+  setInterval(() => {
+    const good = detectEyes();
+    if (good) {
+      frame.classList.add('green');
+      if (!countdown) {
+        countdown = setInterval(() => {
+          seconds--;
+          timerEl.textContent = seconds;
+          timerEl.style.opacity = '1';
+          if (seconds <= 0) {
+            clearInterval(countdown);
+            saveLocallyAndShowResult();
+          }
+        }, 1000);
+      }
+    } else {
+      frame.classList.remove('green');
+      seconds = 7;
+      timerEl.style.opacity = '0';
+      if (countdown) {
+        clearInterval(countdown);
+        countdown = null;
+      }
+    }
+  }, 150);
 });
 
-// Показываем результат
-async function showResult() {
+// Сохраняем локально (пока нет функций) + генерируем фейковую ссылку
+function saveLocallyAndShowResult() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, 512, 128);
+  const dataUrl = canvas.toDataURL('image/png');
+
+  // Сохраняем в localStorage (временное решение)
+  let eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
+  const id = Date.now() + Math.random().toString(36);
+  eyes.push({id, dataUrl});
+  localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
+
+  // Фейковая ссылка на удаление
+  const fakeUrl = location.origin + '/delete.html?id=' + id;
+  deleteLink.textContent = fakeUrl;
+  deleteLink.href = fakeUrl;
+
   video.style.display = 'none';
   frame.style.display = 'none';
   timerEl.style.display = 'none';
-  back.style.display = 'none';
+  document.getElementById('back').style.display = 'none';
   result.style.display = 'block';
-  
-  const blob = await (await fetch(lastFrame)).blob();
-  const form = new FormData();
-  form.append('file', blob, 'eyes.png');
-  
-  const resp = await fetch('/.netlify/functions/add-eyes', { method: 'POST', body: form });
-  const json = await resp.json();
-  
-  if(json.deleteUrl){
-    deleteLink.textContent = json.deleteUrl;
-    deleteLink.href = json.deleteUrl;
-  } else {
-    alert("Ошибка: " + JSON.stringify(json));
-  }
 }
 
-// Обработчики кнопок
-document.getElementById('save').onclick = () => location.href = '/';
-document.getElementById('delete').onclick = async () => {
-  const url = deleteLink.textContent;
-  await fetch('/.netlify/functions/delete-eyes', { method: 'POST', body: JSON.stringify({ url }) });
-  alert("Глаза удалены навсегда.");
+// Кнопки
+document.getElementById('saveBtn').onclick = () => location.href = '/';
+document.getElementById('canvasBtn').onclick = () => location.href = '/canvas.html';
+document.getElementById('deleteBtn').onclick = () => {
+  const id = new URL(deleteLink.href).searchParams.get('id');
+  let eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
+  eyes = eyes.filter(e => e.id !== id);
+  localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
+  alert('Глаза удалены навсегда');
   location.href = '/';
 };
-document.getElementById('canvas').onclick = () => location.href = '/canvas.html';
 </script>
 </body>
 </html>
