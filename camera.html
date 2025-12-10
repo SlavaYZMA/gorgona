@@ -224,10 +224,10 @@ async function accept(){
   const json = await resp.json();
 
   if(json.deleteUrl){
-    alert("Взгляд добавлен.\n\nСсылка для удаления:\n"+json.deleteUrl);
-    location.href = 'canvas.html';
+    alert("Взгляд добавлен навсегда.\n\nСсылка для удаления — сохрани её!\n\n" + json.deleteUrl);
+    location.href = '/'; // возвращаемся на главную страницу
   }else{
-    alert('Ошибка: '+JSON.stringify(json));
+    alert('Ошибка загрузки: ' + JSON.stringify(json));
   }
 }
 
