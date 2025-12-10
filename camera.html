@@ -5,31 +5,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Горгона — добавление взгляда</title>
 <style>
-  body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden;position:relative}
-  #container{position:relative;width:100vw;height:100vh}
-  #video{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scaleX(-1);width:auto;height:auto;max-width:none;max-height:none}
-  #mask{position:absolute;top:0;left:0;width:100%;height:100%;background:#000;z-index:1}
-  #frame{border:6px solid #fff;width:512px;height:128px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:18px;box-shadow:0 0 60px rgba(255,255,255,0.6);z-index:2}
-  #frame.green{border-color:#0f0;box-shadow:0 0 70px rgba(0,255,0,0.7)}
-  #timer{font-size:90px;font-weight:bold;position:absolute;bottom:120px;left:50%;transform:translateX(-50%);opacity:0;z-index:3;transition:opacity 0.3s}
-  #back{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:16px 40px;border:none;border-radius:12px;cursor:pointer;z-index:3;font-size:18px}
-  #result{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(15,15,15,0.98);padding:50px 30px;border-radius:20px;text-align:center;z-index:10;max-width:90%;box-shadow:0 0 80px #000}
-  #result a{color:#f66;font-size:19px;word-break:break-all;margin:25px 0;display:block}
-  #result button{margin:12px;padding:18px 40px;font-size:22px;border:none;border-radius:14px;cursor:pointer}
-  #saveBtn{background:#900;color:#fff}
+  body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
+  #frame{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:512px;height:128px;border:7px solid #fff;border-radius:20px;
+    box-shadow:0 0 80px rgba(255,255,255,0.7);z-index:2;
+    overflow:hidden;
+  }
+  #frame.green{border-color:#0f0;box-shadow:0 0 90px rgba(0,255,0,0.8)}
+  #video{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scaleX(-1);
+    min-width:100vw;min-height:100vh;object-fit:cover;
+  }
+  #mask{
+    position:absolute;top:0;left:0;width:100%;height:100%;background:#000;z-index:1;
+    clip-path: inset(calc(50% - 64px) calc(50% - 256px) round 20px);
+  }
+  #timer{
+    position:absolute;bottom:110px;left:50%;transform:translateX(-50%);
+    font-size:92px;font-weight:900;opacity:0;z-index:3;transition:opacity .4s;
+  }
+  #back{
+    position:absolute;bottom:40px;left:50%;transform:translateX(-50%);
+    background:#222;color:#fff;padding:16px 44px;border:none;border-radius:14px;
+    font-size:20px;cursor:pointer;z-index:3;
+  }
+  #result{
+    display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    background:#111;padding:50px 40px;border-radius:24px;text-align:center;z-index:10;
+    max-width:90%;box-shadow:0 0 100px #000;
+  }
+  #result a{color:#f44;font-size:20px;word-break:break-all;margin:30px 0;display:block}
+  #result button{margin:15px;padding:18px 48px;font-size:24px;border:none;border-radius:16px;cursor:pointer}
+  #saveBtn{background:#a00;color:#fff}
   #deleteBtn{background:#400;color:#fff}
   #canvasBtn{background:#fff;color:#000}
 </style>
 </head>
 <body>
 
-<div id="container">
-  <video id="video" autoplay playsinline></video>
-  <div id="mask"></div>
-  <div id="frame"></div>
-  <div id="timer">7</div>
-  <button id="back" onclick="history.back()">← НАЗАД</button>
-</div>
+<div id="frame"></div>
+<video id="video" autoplay playsinline></video>
+<div id="mask"></div>
+<div id="timer">7</div>
+<button id="back" onclick="history.back()">← НАЗАД</button>
 
 <div id="result">
   <h2>Твои глаза добавлены навсегда</h2>
@@ -44,7 +63,6 @@
 
 <script>
 const video = document.getElementById('video');
-const mask = document.getElementById('mask');
 const frame = document.getElementById('frame');
 const timerEl = document.getElementById('timer');
 const result = document.getElementById('result');
@@ -52,44 +70,31 @@ const deleteLink = document.getElementById('deleteLink');
 let countdown = null;
 let seconds = 7;
 
-// Камера только в рамке
+// Запуск камеры
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-  .then(stream => {
-    video.srcObject = stream;
-    video.onloadedmetadata = () => {
-      video.play();
-      // Маска с вырезом под рамку
-      const cutout = `polygon(0 0, 0 100%, 100% 100%, 100% 0, 
-        50% 50% - 260px, 
-        50% 50% - 260px + 512px, 
-        50% 50% + 64px, 
-        50% 50% - 64px)`;
-      mask.style.clipPath = `inset(calc(50% - 64px) calc(50% - 256px) round 18px)`;
-    };
-  })
-  .catch(() => alert("Камера не включена. Разреши доступ."));
+  .then(stream => video.srcObject = stream)
+  .catch(() => alert("Разреши доступ к камере"));
 
-// Очень точная проверка глаз только в рамке
-function eyesInFrame() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, - (video.videoWidth-512)/2, - (video.videoHeight-128)/2);
+// Надёжное определение глаз в рамке 512×128
+function eyesDetected() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, 512, 128);
+  const d = ctx.getImageData(0, 0, 512, 128).data;
 
-  const data = ctx.getImageData(0, 0, 512, 128).data;
   let dark = 0;
-  for (let i = 0; i < data.length; i += 12) { // шаг 12 — быстрее и достаточно
-    const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-    if (brightness < 85) dark++;
+  for (let i = 0; i < d.length; i += 16) {
+    const bright = (d[i] + d[i+1] + d[i+2]) / 3;
+    if (bright < 80) dark++;
   }
-  return dark > 6000 && dark < 18000; // точный диапазон для двух глаз
+  return dark > 6500 && dark < 17000; // точный диапазон для двух зрачков
 }
 
 let wasGood = false;
 video.onplay = () => {
   setInterval(() => {
-    const good = eyesInFrame();
+    const good = eyesDetected();
     if (good) {
       frame.classList.add('green');
       if (!countdown) {
@@ -99,7 +104,7 @@ video.onplay = () => {
           timerEl.style.opacity = '1';
           if (seconds <= 0) {
             clearInterval(countdown);
-            saveAndShowResult();
+            captureAndSave();
           }
         }, 1000);
       }
@@ -107,38 +112,35 @@ video.onplay = () => {
       frame.classList.remove('green');
       seconds = 7;
       timerEl.style.opacity = '0';
-      if (countdown) clearInterval(countdown);
-      countdown = null;
+      if (countdown) { clearInterval(countdown); countdown = null; }
     }
-    wasGood = good;
-  }, 120);
+  }, 100);
 };
 
-// Сохранение локально (потом заменим на Filebase)
-function saveAndShowResult() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512; canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, -(video.videoWidth-512)/2, -(video.videoHeight-128)/2);
-  const dataUrl = canvas.toDataURL();
+// Захват и сохранение
+function captureAndSave() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, 512, 128);
 
+  const dataUrl = c.toDataURL('image/png');
   const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
-  const id = Date.now() + Math.random().toString(36);
+  const id = Date.now().toString(36) + Math.random().toString(36);
   eyes.push({id, dataUrl});
   localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
 
   deleteLink.textContent = location.origin + '/delete.html?id=' + id;
-  deleteLink.href = location.origin + '/delete.html?id=' + id;
+  deleteLink.href = deleteLink.textContent;
 
   video.style.display = 'none';
-  mask.style.display = 'none';
   frame.style.display = 'none';
   timerEl.style.display = 'none';
   document.getElementById('back').style.display = 'none';
   result.style.display = 'block';
 }
 
-// Кнопки
+// Кнопки результата
 document.getElementById('saveBtn').onclick = () => location.href = '/';
 document.getElementById('canvasBtn').onclick = () => location.href = '/canvas.html';
 document.getElementById('deleteBtn').onclick = () => {
