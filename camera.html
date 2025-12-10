@@ -5,57 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Горгона — добавление взгляда</title>
 <style>
-  body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden;color:#fff;font-family:system-ui,sans-serif}
-  
+  body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
   #frame{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-    width:512px;height:128px;border:12px solid #fff;border-radius:34px;
-    box-shadow:0 0 180px rgba(255,255,255,1.2);overflow:hidden;z-index:2;
+    width:512px;height:128px;border:11px solid #fff;border-radius:32px;
+    box-shadow:0 0 160px rgba(255,255,255,1);overflow:hidden;z-index:2;
   }
-  
-  #video{
-    width:100%;height:100%;object-fit:cover;
-    transform:scaleX(-1) scale(3.0);
-    transform-origin:center;
-  }
-  
-  #info{
-    position:fixed;top:80px;left:50%;transform:translateX(-50%);
-    font-size:28px;text-align:center;line-height:1.4;z-index:3;
-    max-width:90%;
-  }
-  
-  #recordBtn{
-    position:fixed;bottom:120px;left:50%;transform:translateX(-50%);
-    background:#0f0;color:#000;padding:28px 100px;border:none;border-radius:28px;
-    font-size:36px;font-weight:900;cursor:pointer;z-index:3;
-  }
-  
+  #video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1) scale(2.9)}
   #timer{
-    position:fixed;bottom:240px;left:50%;transform:translateX(-50%);
-    font-size:140px;font-weight:900;color:#0f0;opacity:0;z-index:3;
+    position:fixed;bottom:220px;left:50%;transform:translateX(-50%);
+    font-size:120px;font-weight:900;color:#0f0;z-index:3;
   }
-  
+  #recordBtn{
+    position:fixed;bottom:100px;left:50%;transform:translateX(-50%);
+    background:#0f0;color:#000;padding:28px 100px;border:none;border-radius:26px;
+    font-size:34px;font-weight:900;cursor:pointer;z-index:3;
+  }
   #back{
-    position:fixed;bottom:50px;left:50%;transform:translateX(-50%);
-    background:#222;color:#888;padding:16px 50px;border:2px solid #555;
-    border-radius:16px;font-size:22px;cursor:pointer;z-index:3;
+    position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
+    background:#111;color:#888;padding:18px 60px;border:2px solid #444;
+    border-radius:18px;font-size:24px;cursor:pointer;z-index:3;
   }
-  
   #preview{
-    display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:10;
-    flex-direction:column;justify-content:center;align-items:center;gap:40px;
+    display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    background:#000;padding:40px;border-radius:32px;text-align:center;z-index:10;
+    box-shadow:0 0 200px rgba(0,255,0,0.8);
   }
-  #previewImg{
-    width:512px;height:128px;object-fit:cover;border:10px solid #fff;border-radius:30px;
-    box-shadow:0 0 160px rgba(255,255,255,1);
-  }
-  #previewBtns button{
-    padding:20px 60px;font-size:28px;border:none;border-radius:20px;cursor:pointer;margin:0 15px;
-  }
-  #saveBtn{background:#0f0;color:#000;font-weight:900}
-  #retryBtn{background:#666;color:#fff}
-  #cancelBtn{background:#400;color:#fff}
+  #previewImg{max-width:90vw;max-height:70vh;border:8px solid #0f0;border-radius:20px}
+  #preview button{margin:20px;padding:20px 50px;font-size:28px;border:none;border-radius:20px;cursor:pointer}
+  #saveBtn{background:#0f0;color:#000}
+  #againBtn{background:#666;color:#fff}
+  #cancelBtn{background:#300;color:#fff}
 </style>
 </head>
 <body>
@@ -64,23 +44,17 @@
   <video id="video" autoplay playsinline></video>
 </div>
 
-<div id="info">
-  Поднеси телефон вплотную к глазам<br>
-  В кадре должны быть <b>ТОЛЬКО ГЛАЗА</b><br>
-  Ничего больше
-</div>
-
 <div id="timer">10</div>
 <button id="recordBtn">ЗАПИСЬ</button>
 <button id="back" onclick="history.back()">НАЗАД</button>
 
-<!-- Предпросмотр после записи -->
 <div id="preview">
+  <h2 style="color:#0f0">Вот что будет сохранено:</h2>
   <img id="previewImg">
-  <div id="previewBtns">
+  <div>
     <button id="saveBtn">СОХРАНИТЬ</button>
-    <button id="retryBtn">ПЕРЕЗАПИСАТЬ</button>
-    <button id="cancelBtn">УДАЛИТЬ</button>
+    <button id="againBtn">ПЕРЕЗАПИСАТЬ</button>
+    <button id="cancelBtn">ОТМЕНА</button>
   </div>
 </div>
 
@@ -92,60 +66,56 @@ const preview = document.getElementById('preview');
 const previewImg = document.getElementById('previewImg');
 let countdown = null;
 let seconds = 10;
-let capturedUrl = '';
+let capturedDataUrl = '';
 
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
   .then(stream => video.srcObject = stream)
-  .catch(() => alert("Разреши доступ к камере"));
+  .catch(() => alert("Разреши камеру"));
 
 recordBtn.onclick = () => {
   seconds = 10;
-  timerEl.style.opacity = 1;
+  timerEl.textContent = seconds;
+  timerEl.style.display = 'block';
   recordBtn.style.display = 'none';
-  
+
   countdown = setInterval(() => {
     seconds--;
     timerEl.textContent = seconds;
-    
     if (seconds <= 0) {
       clearInterval(countdown);
-      captureAndShowPreview();
+      captureFrame();
     }
   }, 1000);
 };
 
-function captureAndShowPreview() {
+function captureFrame() {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, 512, 128);
+  capturedDataUrl = canvas.toDataURL('image/png');
   
-  capturedUrl = canvas.toDataURL('image/png');
-  previewImg.src = capturedUrl;
-  
+  previewImg.src = capturedDataUrl;
+  preview.style.display = 'block';
   timerEl.style.display = 'none';
-  preview.style.display = 'flex';
 }
 
-// Кнопки предпросмотра
 document.getElementById('saveBtn').onclick = () => {
   const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
   const id = Date.now().toString(36) + Math.random().toString(36);
-  eyes.push({id, dataUrl: capturedUrl});
+  eyes.push({id, dataUrl: capturedDataUrl});
   localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
   location.href = '/';
 };
 
-document.getElementById('retryBtn').onclick = () => {
+document.getElementById('againBtn').onclick = () => {
   preview.style.display = 'none';
   recordBtn.style.display = 'block';
-  timerEl.style.opacity = 0;
+  seconds = 10;
 };
 
-document.getElementById('cancelBtn').onclick = () => {
-  location.href = '/';
-};
+document.getElementById('cancelBtn').onclick = () => location.href = '/';
 </script>
 </body>
 </html>
