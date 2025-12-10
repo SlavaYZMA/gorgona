@@ -10,7 +10,7 @@
   #frame{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     width:512px;height:128px;border:10px solid #fff;border-radius:30px;
-    box-shadow:0 0 0 140px rgba(255,255,255,1);overflow:hidden;z-index:2;
+    box-shadow:0 0 140px rgba(255,255,255,1);overflow:hidden;z-index:2;
   }
   #frame.green{border-color:#0f0;box-shadow:0 0 160px rgba(0,255,0,1.2)}
   
@@ -30,6 +30,7 @@
     background:#0b0;color:#000;padding:22px 80px;border:none;border-radius:20px;
     font-size:28px;font-weight:900;cursor:pointer;z-index:3;
     opacity:0;pointer-events:none;transition:opacity 0.4s;
+ 0.2s;
   }
   #recordBtn.active{opacity:1;pointer-events:all}
   
@@ -66,13 +67,12 @@ navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
 // Очень точное обнаружение двух глаз
 function detectTwoEyes() {
   const canvas = document.createElement('canvas');
-  canvas.width =  = 512;
+  canvas.width = 512;
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, 512, 128);
   const data = ctx.getImageData(0, 0, 512, 128).data;
 
-  // Ищем два отдельных тёмных пятна (левый и правый глаз)
   let leftEye = 0, rightEye = 0;
   for (let x = 0; x < 512; x += 8) {
     for (let y = 0; y < 128; y += 8) {
@@ -84,9 +84,10 @@ function detectTwoEyes() {
       }
     }
   }
-  return leftEye > 800 && rightEye > 800; // два чётких глаза
+  return leftEye > 800 && rightEye > 800;
 }
 
+// Основной цикл
 setInterval(() => {
   if (detectTwoEyes()) {
     frame.classList.add('green');
@@ -94,7 +95,6 @@ setInterval(() => {
   } else {
     frame.classList.remove('green');
     recordBtn.classList.remove('active');
-    // Сброс таймера, если глаза вышли
     if (countdown) {
       clearInterval(countdown);
       countdown = null;
@@ -106,9 +106,17 @@ setInterval(() => {
 
 // Кнопка ЗАПИСЬ
 recordBtn.onclick = () => {
-  if (!detectTwoEyes()) return;
+  if (!recordBtn.classList.contains('active')) return;
   
   countdown = setInterval(() => {
+    if (!detectTwoEyes()) {
+      clearInterval(countdown);
+      countdown = null;
+      seconds = 7;
+      timerEl.style.opacity = 0;
+      return;
+    }
+    
     seconds--;
     timerEl.textContent = seconds;
     timerEl.style.opacity = 1;
@@ -117,23 +125,16 @@ recordBtn.onclick = () => {
       clearInterval(countdown);
       capture();
     }
-    
-    // Если во время записи глаза вышли — сброс
-    if (!detectTwoEyes()) {
-      clearInterval(countdown);
-      countdown = null;
-      seconds = 7;
-      timerEl.style.opacity = 0;
-    }
   }, 1000);
 };
 
 function capture() {
-  const c = document.createElement('canvas');
-  c.width = 512; c.height = 128;
-  const ctx = c.getContext('2d');
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, 512, 128);
-  const dataUrl = c.toDataURL();
+  const dataUrl = canvas.toDataURL();
 
   const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
   const id = Date.now().toString(36) + Math.random().toString(36);
