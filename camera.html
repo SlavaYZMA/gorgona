@@ -7,52 +7,41 @@
 <style>
   body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
   
+  /* чёрный экран */
+  #bg{position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000;z-index:1}
+  
+  /* камера на весь экран под всем */
   #video{
-    position:fixed;top:50%;left:50%;min-width:100%;min-height:100%;
+    position:fixed;top:50%;left:50%;min-width:100vw;min-height:100vh;
     transform:translate(-50%,-50%) scaleX(-1);
-    object-fit:cover;
-    z-index:1;
+    object-fit:cover;z-index:0;
   }
   
-  #cutout{
-    position:fixed;top:0;left:0;width:100%;height:100%;
-    background:#000;
-    z-index:2;
-    pointer-events:none;
-    /* вырезаем окошко под глаза */
-    -webkit-mask-image: radial-gradient(circle at center, transparent 64px, black 66px);
-    mask-image: radial-gradient(circle at center, transparent 64px, black 66px);
-    -webkit-mask-size: 512px 128px;
-    mask-size: 512px 128px;
-    -webkit-mask-position: center;
-    mask-position: center;
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-  }
-  
-  #frame{
+  /* белая рамка с вырезом — это и есть единственное окно */
+  #window{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-    width:512px;height:128px;border:8px solid #fff;border-radius:24px;
-    box-shadow:0 0 100px rgba(255,255,255,0.8);z-index:3;pointer-events:none;
+    width:520px;height:136px; /* чуть больше рамки */
+    border:8px solid #fff;border-radius:26px;
+    box-shadow:0 0 100px rgba(255,255,255,0.9);
+    overflow:hidden;z-index:2;
+    background:#000;
   }
-  #frame.green{border-color:#0f0;box-shadow:0 0 120px rgba(0,255,0,0.9)}
+  #window.green{border-color:#0f0;box-shadow:0 0 120px rgba(0,255,0,1)}
   
   #timer{
     position:fixed;bottom:100px;left:50%;transform:translateX(-50%);
-    font-size:100px;font-weight:900;color:#fff;opacity:0;z-index:4;
+    font-size:100px;font-weight:900;color:#fff;opacity:0;z-index:3;
   }
   #back{
     position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
     background:#222;color:#fff;padding:18px 50px;border:none;border-radius:16px;
-    font-size:22px;cursor:pointer;z-index:4;
+    font-size:22px;cursor:pointer;z-index:3;
   }
   
-  #result{
-    display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-    background:#0a0a0a;padding:60px 40px;border-radius:28px;text-align:center;z-index:10;
-    max-width:90%;box-shadow:0 0 120px #000;color:#fff;
-  }
-  #result a{color:#f55;font-size:21px;word-break:break-all;margin:35px 0;display:block}
+  #result{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    background:#111;padding:60px 40px;border-radius:28px;text-align:center;z-index:10;
+    max-width:90%;box-shadow:0 0 120px #000;color:#fff}
+  #result a{color:#f66;font-size:21px;word-break:break-all;margin:35px 0;display:block}
   #result button{margin:15px;padding:20px 50px;font-size:26px;border:none;border-radius:18px;cursor:pointer}
   #saveBtn{background:#b00;color:#fff}
   #deleteBtn{background:#500;color:#fff}
@@ -62,10 +51,16 @@
 <body>
 
 <video id="video" autoplay playsinline></video>
-<div id="cutout"></div>
-<div id="frame"></div>
+<div id="bg"></div>
+
+<div id="window">
+  <div id="cameraClip" style="width:512px;height:128px;overflow:hidden;margin:4px auto">
+    <div id="cameraView" style="width:512px;height:128px;transform:scaleX(-1)"></div>
+  </div>
+</div>
+
 <div id="timer">7</div>
-<button id="back" onclick="history.back()">← НАЗАД</button>
+<button id="back" onclick="history.back()">НАЗАД</button>
 
 <div id="result">
   <h2>Твои глаза добавлены навсегда</h2>
@@ -80,7 +75,8 @@
 
 <script>
 const video = document.getElementById('video');
-const frame = document.getElementById('frame');
+const view = document.getElementById('cameraView');
+const frame = document.getElementById('window');
 const timerEl = document.getElementById('timer');
 const result = document.getElementById('result');
 const deleteLink = document.getElementById('deleteLink');
@@ -88,8 +84,21 @@ let countdown = null;
 let seconds = 7;
 
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-  .then(stream => video.srcObject = stream)
-  .catch(() => alert("Разреши доступ к камере"));
+  .then(stream => {
+    video.srcObject = stream;
+    video.onloadedmetadata = () => video.play();
+  })
+  .catch(() => alert("Разреши камеру"));
+
+video.addEventListener('play', () => {
+  function draw() {
+    view.style.background = `url(${video.srcObject ? video.videoWidth : ''})`;
+    view.style.backgroundSize = `${video.videoWidth}px ${video.videoHeight}px`;
+    view.style.backgroundPosition = `-${(video.videoWidth-512)/2}px -${(video.videoHeight-128)/2}px`;
+    requestAnimationFrame(draw);
+  }
+  draw();
+});
 
 function eyesInFrame() {
   const c = document.createElement('canvas');
@@ -97,57 +106,53 @@ function eyesInFrame() {
   const ctx = c.getContext('2d');
   ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
   const d = ctx.getImageData(0,0,512,128).data;
-  
   let dark = 0;
   for (let i = 0; i < d.length; i += 16) {
-    if ((d[i] + d[i+1] + d[i+2]) / 3 < 80) dark++;
+    if ((d[i]+d[i+1]+d[i+2])/3 < 80) dark++;
   }
   return dark > 6500 && dark < 17000;
 }
 
-video.onplay = () => {
-  setInterval(() => {
-    if (eyesInFrame()) {
-      frame.classList.add('green');
-      if (!countdown) {
-        countdown = setInterval(() => {
-          seconds--;
-          timerEl.textContent = seconds;
-          timerEl.style.opacity = '1';
-          if (seconds <= 0) {
-            clearInterval(countdown);
-            captureEyes();
-          }
-        }, 1000);
-      }
-    } else {
-      frame.classList.remove('green');
-      seconds = 7;
-      timerEl.style.opacity = '0';
-      if (countdown) { clearInterval(countdown); countdown = null; }
+setInterval(() => {
+  if (eyesInFrame()) {
+    frame.classList.add('green');
+    if (!countdown) {
+      countdown = setInterval(() => {
+        seconds--;
+        timerEl.textContent = seconds;
+        timerEl.style.opacity = 1;
+        if (seconds <= 0) {
+          clearInterval(countdown);
+          capture();
+        }
+      }, 1000);
     }
-  }, 100);
-};
+  } else {
+    frame.classList.remove('green');
+    seconds = 7;
+    timerEl.style.opacity = 0;
+    if (countdown) clearInterval(countdown);
+    countdown = null;
+  }
+}, 120);
 
-function captureEyes() {
+function capture() {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 128;
   const ctx = c.getContext('2d');
   ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
-  
-  const dataUrl = c.toDataURL('image/png');
-  
+  const url = c.toDataURL();
+
   const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
   const id = Date.now().toString(36) + Math.random().toString(36);
-  eyes.push({id, dataUrl});
+  eyes.push({id, url});
   localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
 
   deleteLink.textContent = location.origin + '/delete.html?id=' + id;
   deleteLink.href = deleteLink.textContent;
 
-  video.style.display = 'none';
-  document.getElementById('cutout').style.display = 'none';
-  frame.style.display = 'none';
+  document.getElementById('bg').style.display = 'none';
+  document.getElementById('window').style.display = 'none';
   timerEl.style.display = 'none';
   document.getElementById('back').style.display = 'none';
   result.style.display = 'block';
