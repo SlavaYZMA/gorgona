@@ -16,7 +16,7 @@
   
   #video{
     width:100%;height:100%;object-fit:cover;
-    transform:scaleX(-1) scale(2.8); /* ← ВОТЁРТЫЙ ЗУМ — глаза сразу крупно */
+    transform:scaleX(-1) scale(2.9);
     transform-origin:center;
   }
   
@@ -48,15 +48,9 @@ const timerEl = document.getElementById('timer');
 let countdown = null;
 let seconds = 7;
 
-navigator.mediaDevices.getUserMedia({ 
-  video: { 
-    facingMode: "user",
-    width: { ideal: 1280 },
-    height: { ideal: 720 }
-  } 
-})
-.then(stream => video.srcObject = stream)
-.catch(() => alert("Разреши доступ к камере"));
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+  .then(stream => video.srcObject = stream)
+  .catch(() => alert("Разреши доступ к камере"));
 
 function eyesInFrame() {
   const c = document.createElement('canvas');
@@ -74,6 +68,7 @@ function eyesInFrame() {
 setInterval(() => {
   if (eyesInFrame()) {
     frame.classList.add('green');
+    video.style.transform = 'scaleX(-1) scale(3.1)';
     if (!countdown) {
       countdown = setInterval(() => {
         seconds--;
@@ -87,13 +82,11 @@ setInterval(() => {
     }
   } else {
     frame.classList.remove('green');
+    video.style.transform = 'scaleX(-1) scale(2.9)';
     seconds = 7;
     timerEl.style.opacity = 0;
     if (countdown) { clearInterval(countdown); countdown = null; }
   }
-},  // плавный зум при приближении
-  const zoom = eyesInFrame() ? 3.2 : 2.8;
-  video.style.transform = `scaleX(-1) scale(${zoom})`;
 }, 100);
 
 function capture() {
