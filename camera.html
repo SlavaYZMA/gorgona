@@ -65,17 +65,14 @@ const zoomIn = document.getElementById('zoomIn');
 const zoomOut = document.getElementById('zoomOut');
 const zoomReset = document.getElementById('zoomReset');
 
-zoomSlider.oninput = () => {
-  zoomFactor = parseFloat(zoomSlider.value);
-  zoomValue.textContent = zoomFactor.toFixed(1) + '×';
-};
-zoomIn.onclick = () => { zoomFactor = Math.min(3.0, zoomFactor + 0.1); updateZoomUI(); };
-zoomOut.onclick = () => { zoomFactor = Math.max(1.0, zoomFactor - 0.1); updateZoomUI(); };
-zoomReset.onclick = () => { zoomFactor = 1.6; updateZoomUI(); };
+zoomSlider.oninput = () => { zoomFactor = parseFloat(zoomSlider.value); zoomValue.textContent = zoomFactor.toFixed(1)+'×'; };
+zoomIn.onclick   = () => { zoomFactor = Math.min(3.0, zoomFactor+0.1); updateZoomUI(); };
+zoomOut.onclick  = () => { zoomFactor = Math.max(1.0, zoomFactor-0.1); updateZoomUI(); };
+zoomReset.onclick= () => { zoomFactor = 1.6; updateZoomUI(); };
 
 function updateZoomUI() {
   zoomSlider.value = zoomFactor;
-  zoomValue.textContent = zoomFactor.toFixed(1) + '×';
+  zoomValue.textContent = zoomFactor.toFixed(1)+'×';
 }
 
 // === Запуск камеры ===
@@ -86,11 +83,9 @@ navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: fals
     video.play();
     drawLoop();
   })
-  .catch(err => {
-    alert("Ошибка камеры. Разреши доступ.");
-  });
+  .catch(err => alert("Ошибка камеры. Разреши доступ."));
 
-// === Основной цикл отрисовки с зумом ===
+// === ЗЕРКАЛЬНЫЙ drawLoop (всегда включён) ===
 function drawLoop() {
   if (video.readyState === video.HAVE_ENOUGH_DATA) {
     const baseScale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
@@ -101,17 +96,24 @@ function drawLoop() {
     const srcX = (video.videoWidth - srcW) / 2;
     const srcY = (video.videoHeight - srcH) / 2;
 
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);  // зеркалирование по горизонтали
     ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
   }
+ 16}
   requestAnimationFrame(drawLoop);
 }
 
-// === Запись 3 секунды только из canvas (то, что видит пользователь) ===
+// === Запись 3 секунды из canvas (уже зеркального) ===
 let recorder = null;
 let chunks = [];
 
 function startRecording() {
-  document.getElementById('zoomControls').style.pointerEvents = 'none'; // блок зума
+  document.getElementById('zoomControls').style.pointerEvents = 'none';
   document.getElementById('recordBtn').disabled = true;
 
   const streamFromCanvas = canvas.captureStream(30);
@@ -124,7 +126,6 @@ function startRecording() {
     chunks = [];
   };
 
-  // 3…2…1
   let count = 3;
   const cd = document.getElementById('countdown');
   cd.style.opacity = 1;
@@ -145,7 +146,7 @@ function startRecording() {
   }, 1000);
 }
 
-// === Превью ===
+// === Превью и отправка ===
 function showPreview(blob) {
   const preview = document.getElementById('previewVideo');
   preview.src = URL.createObjectURL(blob);
@@ -163,10 +164,7 @@ function showPreview(blob) {
     <button onclick="retake()" style="margin-left:20px;background:#333">Записать заново</button>
     <button onclick="history.back()" style="margin-left:20px;background:#333">Назад</button>
   `;
-  div.style.position = 'absolute';
-  div.style.bottom = '40px';
-  div.style.left = '50%';
-  div.style.transform = 'translateX(-50%)';
+  div.style.position='absolute';div.style.bottom='40px';div.style.left='50%';div.style.transform='translateX(-50%)';
   document.body.appendChild(div);
 
   window.currentBlob = blob;
