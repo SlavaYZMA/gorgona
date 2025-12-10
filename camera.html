@@ -7,40 +7,40 @@
 <style>
   body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
   
-  /* чёрный экран */
-  #bg{position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000;z-index:1}
-  
-  /* камера на весь экран под всем */
+  /* Камера — только 512×128 в центре, и всё */
   #video{
-    position:fixed;top:50%;left:50%;min-width:100vw;min-height:100vh;
+    position:fixed;
+    top:50%; left:50%;
+    width:512px;
+    height:128px;
+    object-fit:cover;
     transform:translate(-50%,-50%) scaleX(-1);
-    object-fit:cover;z-index:0;
+    border:8px solid #fff;
+    border-radius:26px;
+    box-shadow:0 0 100px rgba(255,255,255,0.8);
+    z-index:2;
   }
-  
-  /* белая рамка с вырезом — это и есть единственное окно */
-  #window{
-    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-    width:520px;height:136px; /* чуть больше рамки */
-    border:8px solid #fff;border-radius:26px;
-    box-shadow:0 0 100px rgba(255,255,255,0.9);
-    overflow:hidden;z-index:2;
-    background:#000;
+  #video.green{
+    border-color:#0f0;
+    box-shadow:0 0 120px rgba(0,255,0,1);
   }
-  #window.green{border-color:#0f0;box-shadow:0 0 120px rgba(0,255,0,1)}
   
   #timer{
-    position:fixed;bottom:100px;left:50%;transform:translateX(-50%);
+    position:fixed;bottom:110px;left:50%;transform:translateX(-50%);
     font-size:100px;font-weight:900;color:#fff;opacity:0;z-index:3;
   }
+  
   #back{
     position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
     background:#222;color:#fff;padding:18px 50px;border:none;border-radius:16px;
     font-size:22px;cursor:pointer;z-index:3;
   }
   
-  #result{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  #result{
+    display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     background:#111;padding:60px 40px;border-radius:28px;text-align:center;z-index:10;
-    max-width:90%;box-shadow:0 0 120px #000;color:#fff}
+    max-width:90%;box-shadow:0 0 120px #000;color:#fff;
+  }
   #result a{color:#f66;font-size:21px;word-break:break-all;margin:35px 0;display:block}
   #result button{margin:15px;padding:20px 50px;font-size:26px;border:none;border-radius:18px;cursor:pointer}
   #saveBtn{background:#b00;color:#fff}
@@ -51,13 +51,6 @@
 <body>
 
 <video id="video" autoplay playsinline></video>
-<div id="bg"></div>
-
-<div id="window">
-  <div id="cameraClip" style="width:512px;height:128px;overflow:hidden;margin:4px auto">
-    <div id="cameraView" style="width:512px;height:128px;transform:scaleX(-1)"></div>
-  </div>
-</div>
 
 <div id="timer">7</div>
 <button id="back" onclick="history.back()">НАЗАД</button>
@@ -75,47 +68,38 @@
 
 <script>
 const video = document.getElementById('video');
-const view = document.getElementById('cameraView');
-const frame = document.getElementById('window');
 const timerEl = document.getElementById('timer');
 const result = document.getElementById('result');
 const deleteLink = document.getElementById('deleteLink');
 let countdown = null;
 let seconds = 7;
 
-navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-  .then(stream => {
-    video.srcObject = stream;
-    video.onloadedmetadata = () => video.play();
-  })
-  .catch(() => alert("Разреши камеру"));
-
-video.addEventListener('play', () => {
-  function draw() {
-    view.style.background = `url(${video.srcObject ? video.videoWidth : ''})`;
-    view.style.backgroundSize = `${video.videoWidth}px ${video.videoHeight}px`;
-    view.style.backgroundPosition = `-${(video.videoWidth-512)/2}px -${(video.videoHeight-128)/2}px`;
-    requestAnimationFrame(draw);
-  }
-  draw();
-});
+navigator.mediaDevices.getUserMedia({ 
+  video: { 
+    facingMode: "user",
+    width: { exact: 512 },
+    height: { exact: 128 }
+  } 
+})
+.then(stream => video.srcObject = stream)
+.catch(() => alert("Разреши доступ к камере"));
 
 function eyesInFrame() {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 128;
   const ctx = c.getContext('2d');
-  ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
+  ctx.drawImage(video, 0, 0, 512, 128);
   const d = ctx.getImageData(0,0,512,128).data;
   let dark = 0;
   for (let i = 0; i < d.length; i += 16) {
-    if ((d[i]+d[i+1]+d[i+2])/3 < 80) dark++;
+    if ((d[i]+d[i+1]+d[i+2])/3 < 85) dark++;
   }
   return dark > 6500 && dark < 17000;
 }
 
 setInterval(() => {
   if (eyesInFrame()) {
-    frame.classList.add('green');
+    video.classList.add('green');
     if (!countdown) {
       countdown = setInterval(() => {
         seconds--;
@@ -128,19 +112,18 @@ setInterval(() => {
       }, 1000);
     }
   } else {
-    frame.classList.remove('green');
+    video.classList.remove('green');
     seconds = 7;
     timerEl.style.opacity = 0;
-    if (countdown) clearInterval(countdown);
-    countdown = null;
+    if (countdown) { clearInterval(countdown); countdown = null; }
   }
-}, 120);
+}, 100);
 
 function capture() {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 128;
   const ctx = c.getContext('2d');
-  ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
+  ctx.drawImage(video, 0, 0, 512, 128);
   const url = c.toDataURL();
 
   const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
@@ -151,8 +134,7 @@ function capture() {
   deleteLink.textContent = location.origin + '/delete.html?id=' + id;
   deleteLink.href = deleteLink.textContent;
 
-  document.getElementById('bg').style.display = 'none';
-  document.getElementById('window').style.display = 'none';
+  video.style.display = 'none';
   timerEl.style.display = 'none';
   document.getElementById('back').style.display = 'none';
   result.style.display = 'block';
