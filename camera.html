@@ -5,224 +5,142 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Горгона — запись взгляда</title>
 <style>
-  :root{--bg:#000;--fg:#fff;--primary:#ff2d2d;--radius:16px;--action-h:56px}
-  *,*::before,*::after{box-sizing:border-box}
-  body,html{margin:0;padding:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif;overflow:hidden}
-  #app{display:flex;flex-direction:column;height:100vh;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-
-  .topbar{padding:16px 20px;text-align:left}
-  .topbar button{background:none;border:none;color:var(--fg);font-size:18px;cursor:pointer}
-
-  main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;gap:24px;transition:opacity .5s ease}
-  .canvas-wrap{position:relative;width:512px;max-width:100%}
-  #visibleCanvas{display:block;width:100%;height:auto;border:5px solid #fff;border-radius:var(--radius);box-shadow:0 8px 40px rgba(255,255,255,0.12)}
-  #hiddenVideo{position:absolute;opacity:0;width:1px;height:1px}
-
-  .overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:10}
-  #countdown{font-size:120px;opacity:0;transition:opacity .3s}
-  #rec{font-size:28px;opacity:0;color:#ff4444;transition:opacity .3s}
-
-  .instruction{max-width:640px;text-align:center;font-size:18px;line-height:1.5;color:rgba(255,255,255,0.7)}
-
-  .controls{display:flex;align-items:center;justify-content:center;gap:12px;background:rgba(255,255,255,0.04);padding:12px 20px;border-radius:var(--radius);backdrop-filter:blur(12px)}
-  .controls button{background:#333;color:#fff;border:none;width:44px;height:44px;border-radius:12px;font-size:24px;cursor:pointer}
-  #zoomSlider{flex:1;max-width:220px;height:8px;border-radius:4px;background:#333}
-  #zoomValue{min-width:50px;text-align:center;font-size:18px}
-  #zoomReset{font-size:14px;padding:8px 14px;background:#222}
-
-  .actions{position:sticky;bottom:16px;display:flex;gap:12px;padding:0 20px;justify-content:center;max-width:640px;margin:0 auto}
-  .actions button{flex:1;height:var(--action-h);border-radius:var(--radius);border:none;font-size:18px;font-weight:600;cursor:pointer;transition:.15s}
-  #recordBtn{background:var(--primary);color:#fff;box-shadow:0 4px 20px rgba(255,45,45,0.4)}
-  #recordBtn:active{transform:scale(0.95)}
-  .btn-secondary{background:#222;color:#fff}
-
-  /* ОКНО ПРЕДПРОСМОТРА */
-  #previewOverlay{
-    position:fixed;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    opacity:0;pointer-events:none;transition:opacity .6s ease;z-index:100;
-  }
-  #previewOverlay.active{opacity:1;pointer-events:all}
-  #previewVideo{
-    width:512px;max-width:90vw;height:128px;border:5px solid #fff;border-radius:var(--radius);
-    box-shadow:0 8px 40px rgba(255,255,255,0.12);background:#000;
-  }
-  .preview-actions{margin-top:40px;display:flex;gap:16px;width:100%;max-width:512px;padding:0 20px}
-  .preview-actions button{
-    flex:1;height:var(--action-h);border-radius:var(--radius);font-size:18px;font-weight:600;
-  }
+  body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
+  #video{width:100vw;height:100vh;object-fit:cover;transform:scaleX(-1)}
+  #overlay{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px}
+  #frame{width:512px;height:128px;border:5px solid white;border-radius:16px;box-shadow:0 0 50px rgba(255,255,255,0.3)}
+  #countdown{font-size:120px;font-weight:900;opacity:0}
+  #rec{color:#ff3333;font-size:32px;font-weight:bold;opacity:0}
+  .text{font-size:18px;text-align:center;max-width:90%;line-height:1.5}
+  #controls{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);display:flex;gap:20px;z-index:10}
+  button{background:#222;color:#fff;border:none;padding:16px 32px;border-radius:12px;font-size:18px;cursor:pointer}
+  #recordBtn{background:#c00;box-shadow:0 4px 20px rgba(255,0,0,0.5)}
 </style>
 </head>
 <body>
 
-<div id="app">
-  <header class="topbar">
-    <button id="backBtnTop">Назад</button>
-  </header>
+<video id="video" autoplay playsinline muted></video>
 
-  <main id="mainView">
-    <div class="canvas-wrap">
-      <video id="hiddenVideo" autoplay playsinline muted></video>
-      <canvas id="visibleCanvas" width="512" height="128"></canvas>
-      <div id="countdown" class="overlay">3</div>
-      <div id="rec" class="overlay">REC</div>
-    </div>
-
-    <p class="instruction">
-      Поднесите устройство так, чтобы <strong>глаза</strong> полностью заполнили рамку.<br>
-      Используйте зум для точной подгонки.
-    </p>
-
-    <div class="controls">
-      <button id="zoomOut">−</button>
-      <input type="range" id="zoomSlider" min="1.0" max="3.0" step="0.1" value="1.6">
-      <span id="zoomValue">1.6×</span>
-      <button id="zoomIn">+</button>
-      <button id="zoomReset">Reset</button>
-    </div>
-  </main>
-
-  <footer class="actions">
-    <button id="backBtn" class="btn-secondary">Назад</button>
-    <button id="recordBtn">Записать</button>
-    <div style="flex:1"></div>
-  </footer>
-
-  <!-- ПРЕДПРОСМОТР -->
-  <div id="previewOverlay">
-    <video id="previewVideo" loop muted playsinline></video>
-    <div class="preview-actions">
-      <button onclick="accept()" style="background:var(--primary);color:#fff">Далее</button>
-      <button onclick="retake()" style="background:#333;color:#fff">Заново</button>
-      <button onclick="history.back()" style="background:#222;color:#fff">Назад</button>
-    </div>
+<div id="overlay">
+  <div id="frame"></div>
+  <div id="countdown">3</div>
+  <div id="rec">● REC</div>
+  <div class="text">
+    Поднесите глаза точно в рамку<br>
+    Держите взгляд 3 секунды
   </div>
 </div>
 
+<div id="controls">
+  <button onclick="history.back()">Назад</button>
+  <button id="recordBtn">Записать взгляд</button>
+</div>
+
 <script>
-const video = document.getElementById('hiddenVideo');
-const canvas = document.getElementById('visibleCanvas');
-const ctx = canvas.getContext('2d');
-let stream = null;
-let zoomFactor = 1.6;
-
-// зум
-const zoomSlider = document.getElementById('zoomSlider');
-const zoomValue = document.getElementById('zoomValue');
-const zoomIn = document.getElementById('zoomIn');
-const zoomOut = document.getElementById('zoomOut');
-const zoomReset = document.getElementById('zoomReset');
-
-zoomSlider.oninput = () => { zoomFactor = parseFloat(zoomSlider.value); zoomValue.textContent = zoomFactor.toFixed(1)+'×'; };
-zoomIn.onclick   = () => { zoomFactor = Math.min(3.0, zoomFactor+0.1); updateZoomUI(); };
-zoomOut.onclick  = () => { zoomFactor = Math.max(1.0, zoomFactor-0.1); updateZoomUI(); };
-zoomReset.onclick = () => { zoomFactor = 1.6; updateZoomUI(); };
-function updateZoomUI(){ zoomSlider.value = zoomFactor; zoomValue.textContent = zoomFactor.toFixed(1)+'×'; }
+const video = document.getElementById('video');
+let recorder = null;
+let chunks = [];
 
 // камера
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
-  .then(s => { stream = s; video.srcObject = stream; video.play(); drawLoop(); })
+  .then(stream => {
+    video.srcObject = stream;
+  })
   .catch(() => alert("Ошибка камеры. Разреши доступ."));
 
-// зеркальный drawLoop
-function drawLoop(){
-  if(video.readyState === video.HAVE_ENOUGH_DATA){
-    const baseScale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
-    const finalScale = baseScale * zoomFactor;
-    const srcW = canvas.width / finalScale;
-    const srcH = canvas.height / finalScale;
-    const srcX = (video.videoWidth - srcW)/2;
-    const srcY = (video.videoHeight - srcH)/2;
-
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.save();
-    ctx.translate(canvas.width,0);
-    ctx.scale(-1,1);
-    ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, canvas.width, canvas.height);
-    ctx.restore();
+// проверка: есть ли глаза в рамке?
+function hasEyes() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
+  const data = ctx.getImageData(0, 0, 512, 128).data;
+  let dark = 0;
+  for (let i = 0; i < data.length; i += 12) {
+    const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+    if (brightness < 100) dark++;
   }
-  requestAnimationFrame(drawLoop);
+  return dark > 5000;
 }
 
-// запись
-let recorder = null;
-let chunks = [];
-let currentBlob = null;
-
-function startRecording(){
-  document.getElementById('zoomControls').style.pointerEvents='none';
+// запись 3-секундного видео
+document.getElementById('recordBtn').onclick = () => {
+  if (recorder?.state === "recording") return;
+  
   document.getElementById('recordBtn').disabled = true;
+  chunks = [];
 
-  const streamFromCanvas = canvas.captureStream(30);
-  const options = [{mimeType:'video/webm;codecs=vp9'},{mimeType:'video/webm;codecs=vp8'},{mimeType:'video/webm'}];
-  let selected = options.find(o => MediaRecorder.isTypeSupported(o.mimeType)) || {};
+  const stream = video.captureStream(30);
+  const options = { mimeType: 'video/webm;codecs=vp9' };
+  if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+    options.mimeType = 'video/webm;codecs=vp8';
+  }
+  if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+    options.mimeType = 'video/webm';
+  }
 
-  recorder = new MediaRecorder(streamFromCanvas, selected);
+  recorder = new MediaRecorder(stream, options);
+
+  let sec = 3;
+  const cd = document.getElementById('countdown');
+  cd.style.opacity = 1;
+  cd.textContent = sec;
+
+  const checker = setInterval(() => {
+    if (!hasEyes()) {
+      recorder.stop();
+      clearInterval(checker);
+      cd.style.opacity = 0;
+      document.getElementById('recordBtn').disabled = false;
+      alert("Глаза вышли из рамки. Попробуй ещё раз.");
+      return;
+    }
+    sec--;
+    cd.textContent = sec;
+    if (sec <= 0) {
+      clearInterval(checker);
+      cd.style.opacity = 0;
+      document.getElementById('rec').style.opacity = 1;
+    }
+  }, 1000);
 
   recorder.ondataavailable = e => chunks.push(e.data);
   recorder.onstop = () => {
-    currentBlob = new Blob(chunks, {type: selected.mimeType || 'video/webm'});
-    showPreview();
-    chunks = [];
+    document.getElementById('rec').style.opacity = 0;
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    if (blob.size < 30000) { // <30 КБ — явно мусор
+      alert("Видео слишком маленькое. Попробуй ещё раз.");
+      document.getElementById('recordBtn').disabled = false;
+      return;
+    }
+    uploadVideo(blob);
   };
 
-  let count = 3;
-  const cd = document.getElementById('countdown');
-  cd.style.opacity = 1;
-  cd.textContent = count;
-  const iv = setInterval(() => {
-    count--;
-    if(count>0) cd.textContent = count;
-    else{
-      clearInterval(iv);
-      cd.style.opacity = 0;
-      document.getElementById('rec').style.opacity = 1;
-      recorder.start();
-      setTimeout(() => {
-        recorder.stop();
-        document.getElementById('rec').style.opacity = 0;
-      }, 3000);
-    }
-  },1000);
-}
+  recorder.start();
+  setTimeout(() => {
+    if (recorder.state === "recording") recorder.stop();
+  }, 4000);
+};
 
-function showPreview(){
-  const overlay = document.getElementById('previewOverlay');
-  const previewVideo = document.getElementById('previewVideo');
-  previewVideo.src = URL.createObjectURL(currentBlob);
-  previewVideo.play();
-  overlay.classList.add('active');
-
-  // скрываем всё остальное
-  document.getElementById('mainView').style.opacity = '0';
-  document.querySelector('.actions').style.opacity = '0';
-  document.querySelector('.topbar').style.opacity = '0';
-}
-
-function retake(){
-  location.reload();
-}
-
-async function accept(){
-  if(!currentBlob) return;
-
+async function uploadVideo(blob) {
   const form = new FormData();
-  form.append('file', currentBlob, 'eyes.webm');
+  form.append('file', blob, 'eyes.webm');
 
-  const resp = await fetch('/.netlify/functions/add-eyes', {method:'POST', body:form});
+  const resp = await fetch('/.netlify/functions/add-eyes', {
+    method: 'POST',
+    body: form
+  });
   const json = await resp.json();
 
-  if(json.deleteUrl){
-    alert("Взгляд добавлен навсегда.\n\nСсылка для удаления:\n" + json.deleteUrl);
-    location.href = '/'; // возвращаемся на главную
-  }else{
-    alert('Ошибка: ' + JSON.stringify(json));
+  if (json.deleteUrl) {
+    alert("Взгляд добавлен навсегда.\n\nСсылка для удаления (СОХРАНИ ЕЁ!):\n" + json.deleteUrl);
+    location.href = 'canvas.html';
+  } else {
+    alert("Ошибка: " + JSON.stringify(json));
+    document.getElementById('recordBtn').disabled = false;
   }
 }
-
-// кнопки
-document.getElementById('recordBtn').onclick = startRecording;
-document.getElementById('backBtn').onclick = () => history.back();
-document.getElementById('backBtnTop').onclick = () => history.back();
 </script>
 </body>
 </html>
