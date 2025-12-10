@@ -2,35 +2,26 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport"UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Горгона — добавление взгляда</title>
 <style>
   body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
-  
-  /* Чёрный экран + вырез под рамку */
   #container{position:relative;width:100vw;height:100vh;background:#000}
-  
-  /* Камера на весь экран, но скрыта маской */
   #video{
     position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;
-    transform:scaleX(-1); /* зеркало */
+    transform:scaleX(-1);
   }
-  
-  /* Маска — чёрная, с прозрачным окном 512×128 в центре */
   #mask{
     position:absolute;top:0;left:0;width:100%;height:100%;background:#000;z-index:1;
-    /* вырезаем ровно центр под рамку */
     clip-path: inset(calc(50% - 64px) calc(50% - 256px) round 24px);
   }
-  
-  /* Белая рамка поверх маски */
   #frame{
     position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
     width:512px;height:128px;border:8px solid #fff;border-radius:24px;
     box-shadow:0 0 100px rgba(255,255,255,0.8);z-index:2;pointer-events:none;
   }
   #frame.green{border-color:#0f0;box-shadow:0 0 120px rgba(0,255,0,0.9)}
-  
   #timer{
     position:absolute;bottom:100px;left:50%;transform:translateX(-50%);
     font-size:100px;font-weight:900;opacity:0;z-index:3;transition:opacity .5s;
@@ -40,7 +31,6 @@
     background:#222;color:#fff;padding:18px 50px;border:none;border-radius:16px;
     font-size:22px;cursor:pointer;z-index:3;
   }
-  
   #result{
     display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
     background:#0a0a0a;padding:60px 40px;border-radius:28px;text-align:center;z-index:10;
@@ -81,7 +71,7 @@ const timerEl = document.getElementById('timer');
 const result = document.getElementById('result');
 const deleteLink = document.getElementById('deleteLink');
 let countdown = null;
-let seconds =  = 7;
+let seconds = 7;
 
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
   .then(stream => video.srcObject = stream)
@@ -98,7 +88,6 @@ function eyesInFrame() {
   for (let i = 0; i < d.length; i += 16) {
     if ((d[i]+d[i+1]+d[i+2])/3 < 80) dark++;
   }
- 17000) return false;
   return dark > 6500 && dark < 17000;
 }
 
@@ -137,8 +126,6 @@ function captureEyes() {
   const id = Date.now().toString(36) + Math.random().toString(36);
   eyes.push({id, dataUrl});
   localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
-
-  = JSON.stringify(eyes));
 
   deleteLink.textContent = location.origin + '/delete.html?id=' + id;
   deleteLink.href = deleteLink.textContent;
