@@ -14,7 +14,7 @@
   }
   
   #video{
-    width:100%;height:100%;object-fit:cover;
+    width:100vw;height:100vh;object-fit:cover;
     transform:scaleX(-1) scale(3.0);
     transform-origin:center;
   }
@@ -56,9 +56,9 @@
 </head>
 <body>
 
-<div id="frame">
-  <video id="video" autoplay playsinline></video>
-</div>
+<video id="video" autoplay playsinline></video>
+
+<div id="frame"></div>
 
 <div id="info">Поднеси телефон вплотную к глазам<br>чтобы в рамке были <b>только глаза</b></div>
 
@@ -66,7 +66,7 @@
 <div id="timer">10</div>
 
 <div id="preview">
-  <h2 style="color:#0f0">Взгляд записан</h2>
+  <h2 style="color:#0f0">Вот что будет сохранено</h2>
   <img id="previewImg">
   <div>
     <button id="saveBtn">СОХРАНИТЬ</button>
@@ -92,6 +92,7 @@ navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
 
 recordBtn.onclick = () => {
   recordBtn.style.display = 'none';
+  seconds = 10;
   
   countdown = setInterval(() => {
     seconds--;
@@ -100,17 +101,21 @@ recordBtn.onclick = () => {
     
     if (seconds <= 0) {
       clearInterval(countdown);
-      captureAndShowPreview();
+      captureExactlyFromFrame();
     }
   }, 1000);
 };
 
-function captureAndShowPreview() {
+function captureExactlyFromFrame() {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, 512, 128);
+  
+  // Берём ровно центр видео — ровно то, что внутри рамки
+  const sourceX = (video.videoWidth - 512) / 2;
+  const sourceY = (video.videoHeight - 128) / 2;
+  ctx.drawImage(video, sourceX, sourceY, 512, 128, 0, 0, 512, 128);
   
   const dataUrl = canvas.toDataURL('image/png');
   previewImg.src = dataUrl;
@@ -119,9 +124,9 @@ function captureAndShowPreview() {
   document.getElementById('frame').style.display = 'none';
   timerEl.style.display = 'none';
   document.getElementById('back').style.display = 'none';
+  document.getElementById('info').style.display = 'none';
   preview.style.display = 'block';
   
-  // Сохранить
   document.getElementById('saveBtn').onclick = () => {
     const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
     const id = Date.now().toString(36) + Math.random().toString(36);
@@ -130,10 +135,8 @@ function captureAndShowPreview() {
     location.href = '/';
   };
   
-  // Перезаписать
   document.getElementById('redoBtn').onclick = () => location.reload();
   
-  // Удалить и выйти
   document.getElementById('cancelBtn').onclick = () => location.href = '/';
 }
 </script>
