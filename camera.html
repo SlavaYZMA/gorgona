@@ -58,7 +58,7 @@ const ctx = canvas.getContext('2d');
 let stream = null;
 let zoomFactor = 1.6;
 
-// === Зум-контролы ===
+// === Зум-контролы зума ===
 const zoomSlider = document.getElementById('zoomSlider');
 const zoomValue = document.getElementById('zoomValue');
 const zoomIn = document.getElementById('zoomIn');
@@ -104,11 +104,10 @@ function drawLoop() {
     ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, canvas.width, canvas.height);
     ctx.restore();
   }
- 16}
   requestAnimationFrame(drawLoop);
 }
 
-// === Запись 3 секунды из canvas (уже зеркального) ===
+// === Запись 3 секунды ===
 let recorder = null;
 let chunks = [];
 
@@ -146,7 +145,7 @@ function startRecording() {
   }, 1000);
 }
 
-// === Превью и отправка ===
+// === Превью ===
 function showPreview(blob) {
   const preview = document.getElementById('previewVideo');
   preview.src = URL.createObjectURL(blob);
