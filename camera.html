@@ -6,9 +6,8 @@
 <title>Горгона — запись взгляда</title>
 <style>
   :root{
-    --bg:#000;--fg:#fff;--muted:rgba(255,255,255,0.7);--primary:#ff2d2d;
-    --surface:rgba(255,255,255,0.04);--radius:16px;--gap:16px;--action-height:56px;
-    --max-width:640px;
+    --bg:#000;--fg:#fff;--primary:#ff2d2d;--surface:rgba(255,255,255,0.04);
+    --radius:16px;--gap:16px;--action-h:56px;--max-w:640px;
   }
   *,*::before,*::after{box-sizing:border-box}
   body,html{margin:0;padding:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
@@ -18,29 +17,45 @@
   .topbar button{background:none;border:none;color:var(--fg);font-size:18px;cursor:pointer;padding:8px}
 
   main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;gap:24px;overflow-y:auto}
-  .canvas-wrap{position:relative;width:512px;max-width:100%}
-  #visibleCanvas{display:block;width:100%;height:auto;border:5px solid white;border-radius:var(--radius);box-shadow:0 8px 40px rgba(255,255,255,0.12)}
-  #hiddenVideo{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+  .canvas-wrap{position:relative;width:512px;max-width:100%;transition:opacity .4s ease}
+  #visibleCanvas{display:block;width:100%;height:auto;border:5px solid #fff;border-radius:var(--radius);box-shadow:0 8px 40px rgba(255,255,255,0.12)}
+  #hiddenVideo{position:absolute;opacity:0;width:1px;height:1px}
 
-  .overlay-count,.overlay-rec{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;font-weight:bold;z-index:10}
-  #countdown{font-size:120px;opacity:0}
-  #rec{font-size:28px;opacity:0;color:#ff4444}
+  .overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:10}
+  #countdown{font-size:120px;opacity:0;transition:opacity .3s}
+  #rec{font-size:28px;opacity:0;color:#ff4444;transition:opacity .3s}
 
-  .instruction{max-width:var(--max-width);text-align:center;font-size:18px;line-height:1.5;color:var(--muted);margin:0}
+  .instruction{max-width:var(--max-w);text-align:center;font-size:18px;line-height:1.5;color:rgba(255,255,255,0.7);margin:0}
 
-  .controls{display:flex;align-items:center;justify-content:center;gap:12px;background:var(--surface);padding:12px 20px;border-radius:var(--radius);backdrop-filter:blur(10px);max-width:var(--max-width);width:100%}
+  .controls{display:flex;align-items:center;justify-content:center;gap:12px;background:var(--surface);padding:12px 20px;border-radius:var(--radius);backdrop-filter:blur(12px);max-width:var(--max-w);width:100%;transition:opacity .4s ease}
   .controls button{background:#333;color:#fff;border:none;width:44px;height:44px;border-radius:12px;font-size:24px;cursor:pointer}
   #zoomSlider{flex:1;max-width:220px;height:8px;border-radius:4px;background:#333}
   #zoomValue{min-width:50px;text-align:center;font-size:18px}
   #zoomReset{font-size:14px;padding:8px 14px;background:#222}
 
-  .actions{position:sticky;bottom:16px;display:flex;gap:12px;padding:0 20px;justify-content:center;max-width:var(--max-width);margin:0 auto}
-  .actions button{flex:1;height:var(--action-height);border-radius:var(--radius);border:none;font-size:18px;font-weight:600;cursor:pointer;transition:all 0.15s}
+  .actions{position:sticky;bottom:16px;display:flex;gap:12px;padding:0 20px;justify-content:center;max-width:var(--max-w);margin:0 auto;transition:opacity .4s ease}
+  .actions button{height:var(--action-h);border-radius:var(--radius);border:none;font-size:18px;font-weight:600;cursor:pointer;transition:all .15s;flex:1}
   #recordBtn{background:var(--primary);color:#fff;box-shadow:0 4px 20px rgba(255,45,45,0.4)}
   #recordBtn:active{transform:scale(0.95)}
   .btn-secondary{background:#222;color:#fff}
 
-  #previewVideo{max-width:90vw;max-height:60vh;border:5px solid white;border-radius:var(--radius)}
+  /* ПРЕДПРОСМОТР */
+  #previewWrap{
+    position:absolute;top:0;left:0;width:100%;height:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:#000;opacity:0;pointer-events:none;transition:opacity .5s ease;
+  }
+  #previewWrap.active{opacity:1;pointer-events:all}
+  #previewVideo{
+    width:512px;max-width:90vw;height:128px;border:5px solid #fff;border-radius:var(--radius);
+    box-shadow:0 8px 40px rgba(255,255,255,0.12);object-fit:contain;background:#000;
+  }
+  .preview-actions{
+    margin-top:32px;display:flex;gap:16px;width:100%;max-width:512px;padding:0 20px;
+  }
+  .preview-actions button{
+    flex:1;height:var(--action-h);border-radius:var(--radius);font-size:18px;font-weight:600;
+  }
 
   @media(min-width:768px){
     .controls{padding:14px 28px}
@@ -53,15 +68,15 @@
 
 <div id="app">
   <header class="topbar">
-    <button id="backBtnTop" aria-label="Назад">Назад</button>
+    <button id="backBtnTop">Назад</button>
   </header>
 
   <main>
-    <div class="canvas-wrap">
+    <div class="canvas-wrap" id="cameraView">
       <video id="hiddenVideo" autoplay playsinline muted></video>
       <canvas id="visibleCanvas" width="512" height="128"></canvas>
-      <div id="countdown" class="overlay-count">3</div>
-      <div id="rec" class="overlay-rec">REC</div>
+      <div id="countdown" class="overlay">3</div>
+      <div id="rec" class="overlay">REC</div>
     </div>
 
     <p class="instruction">
@@ -70,22 +85,29 @@
     </p>
 
     <div class="controls" id="zoomControls">
-      <button id="zoomOut" aria-label="Уменьшить зум">−</button>
-      <input type="range" id="zoomSlider" min="1.0" max="3.0" step="0.1" value="1.6"
-             aria-label="Зум" aria-valuemin="1.0" aria-valuemax="3.0" aria-valuenow="1.6">
-      <span id="zoomValue" aria-live="polite">1.6×</span>
-      <button id="zoomIn" aria-label="Увеличить зум">+</button>
+      <button id="zoomOut">−</button>
+      <input type="range" id="zoomSlider" min="1.0" max="3.0" step="0.1" value="1.6">
+      <span id="zoomValue">1.6×</span>
+      <button id="zoomIn">+</button>
       <button id="zoomReset">Reset</button>
     </div>
   </main>
 
   <footer class="actions">
     <button id="backBtn" class="btn-secondary">Назад</button>
-    <button id="recordBtn" class="btn-primary">Записать</button>
+    <button id="recordBtn">Записать</button>
     <div style="flex:1"></div>
   </footer>
 
-  <video id="previewVideo" loop muted playsinline style="display:none"></video>
+  <!-- ПРЕДПРОСМОТР -->
+  <div id="previewWrap">
+    <video id="previewVideo" loop muted playsinline></video>
+    <div class="preview-actions">
+      <button onclick="accept()" style="background:var(--primary)">Далее</button>
+      <button onclick="retake()" style="background:#333">Заново</button>
+      <button onclick="history.back()" style="background:#222">Назад</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -106,18 +128,14 @@ zoomSlider.oninput = () => { zoomFactor = parseFloat(zoomSlider.value); zoomValu
 zoomIn.onclick   = () => { zoomFactor = Math.min(3.0, zoomFactor+0.1); updateZoomUI(); };
 zoomOut.onclick  = () => { zoomFactor = Math.max(1.0, zoomFactor-0.1); updateZoomUI(); };
 zoomReset.onclick = () => { zoomFactor = 1.6; updateZoomUI(); };
-
-function updateZoomUI(){
-  zoomSlider.value = zoomFactor;
-  zoomValue.textContent = zoomFactor.toFixed(1)+'×';
-}
+function updateZoomUI(){ zoomSlider.value = zoomFactor; zoomValue.textContent = zoomFactor.toFixed(1)+'×'; }
 
 // камера
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
   .then(s => { stream = s; video.srcObject = stream; video.play(); drawLoop(); })
   .catch(() => alert("Ошибка камеры. Разреши доступ."));
 
-// зеркальный drawLoop — зеркальный
+// зеркальный + зум drawLoop
 function drawLoop(){
   if(video.readyState === video.HAVE_ENOUGH_DATA){
     const baseScale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
@@ -137,7 +155,7 @@ function drawLoop(){
   requestAnimationFrame(drawLoop);
 }
 
-// === ЗАПИСЬ С FALLBACK НА VP8 ===
+// запись
 let recorder = null;
 let chunks = [];
 
@@ -146,21 +164,14 @@ function startRecording(){
   document.getElementById('recordBtn').disabled = true;
 
   const streamFromCanvas = canvas.captureStream(30);
-  const options = [
-    { mimeType: 'video/webm;codecs=vp9' },
-    { mimeType: 'video/webm;codecs=vp8' },
-    { mimeType: 'video/webm' }
-  ];
-  let selected = null;
-  for(const opt of options){
-    if(MediaRecorder.isTypeSupported(opt.mimeType)){ selected = opt; break; }
-  }
+  const options = [{mimeType:'video/webm;codecs=vp9'},{mimeType:'video/webm;codecs=vp8'},{mimeType:'video/webm'}];
+  let selected = options.find(opt => MediaRecorder.isTypeSupported(opt.mimeType));
 
   recorder = new MediaRecorder(streamFromCanvas, selected);
 
   recorder.ondataavailable = e => chunks.push(e.data);
   recorder.onstop = () => {
-    const blob = new Blob(chunks, { type: selected?.mimeType || 'video/webm' });
+    const blob = new Blob(chunks, {type: selected?.mimeType || 'video/webm'});
     showPreview(blob);
     chunks = [];
   };
@@ -185,37 +196,31 @@ function startRecording(){
   },1000);
 }
 
-// превью и отправка
+// ПРЕДПРОСМОТР — теперь красиво и плавно
 function showPreview(blob){
-  const preview = document.getElementById('previewVideo');
-  preview.src = URL.createObjectURL(blob);
-  preview.style.display = 'block';
-  preview.play();
+  const previewWrap = document.getElementById('previewWrap');
+  const previewVideo = document.getElementById('previewVideo');
+  previewVideo.src = URL.createObjectURL(blob);
+  previewVideo.play();
+  previewWrap.classList.add('active');
 
-  canvas.style.display = 'none';
-  document.querySelector('.instruction').style.display = 'none';
-  document.getElementById('recordBtn').style.display = 'none';
-  document.getElementById('zoomControls').style.display = 'none';
-  document.querySelector('.topbar').style.display = 'none';
-
-  const div = document.createElement('div');
-  div.className = 'actions preview-actions';
-  div.innerHTML = `
-    <button onclick="accept()" style="flex:1;height:56px;background:var(--primary);color:#fff;border-radius:12px">Далее</button>
-    <button onclick="retake()" style="flex:1;height:56px;background:#333;margin:0 12px;border-radius:12px">Заново</button>
-    <button onclick="history.back()" style="flex:1;height:56px;background:#222;border-radius:12px">Назад</button>
-  `;
-  document.body.appendChild(div);
-  window.currentBlob = blob;
+  // скрываем всё остальное
+  document.getElementById('cameraView').style.opacity = '0';
+  document.querySelector('.instruction').style.opacity = '0';
+  document.getElementById('zoomControls').style.opacity = '0';
+  document.querySelector('.actions').style.opacity = '0';
+  document.querySelector('.topbar').style.opacity = '0';
 }
 
-function retake(){ location.reload(); }
+function retake(){
+  location.reload();
+}
 
 async function accept(){
   const form = new FormData();
   form.append('file', window.currentBlob, 'eyes.webm');
 
-  const resp = await fetch('/.netlify/functions/add-eyes', { method:'POST', body:form });
+  const resp = await fetch('/.netlify/functions/add-eyes', {method:'POST', body:form});
   const json = await resp.json();
 
   if(json.deleteUrl){
@@ -226,10 +231,15 @@ async function accept(){
   }
 }
 
-// ВОТ ЭТА СТРОКА БЫЛА УТЕРЯНА — ТЕПЕРЬ ВЕРНУЛА
-document.getElementById('recordBtn').onclick = startRecording;
+// хранение blob для отправки
+let currentBlob = null;
+function showPreview(blob){
+  currentBlob = blob;
+  // ... весь код выше
+}
 
-// кнопки «Назад»
+// кнопки
+document.getElementById('recordBtn').onclick = startRecording;
 document.getElementById('backBtn').onclick = () => history.back();
 document.getElementById('backBtnTop').onclick = () => history.back();
 </script>
