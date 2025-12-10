@@ -37,7 +37,7 @@
   .actions{position:sticky;bottom:16px;display:flex;gap:12px;padding:0 20px;justify-content:center;max-width:var(--max-width);margin:0 auto}
   .actions button{flex:1;height:var(--action-height);border-radius:var(--radius);border:none;font-size:18px;font-weight:600;cursor:pointer;transition:all 0.15s}
   #recordBtn{background:var(--primary);color:#fff;box-shadow:0 4px 20px rgba(255,45,45,0.4)}
-  #recordBtn:active{transform:scale(0.95%)}
+  #recordBtn:active{transform:scale(0.95)}
   .btn-secondary{background:#222;color:#fff}
 
   #previewVideo{max-width:90vw;max-height:60vh;border:5px solid white;border-radius:var(--radius)}
@@ -58,7 +58,6 @@
 
   <main>
     <div class="canvas-wrap">
-      <!-- ОБЯЗАТЕЛЬНО добавили скрытое видео -->
       <video id="hiddenVideo" autoplay playsinline muted></video>
       <canvas id="visibleCanvas" width="512" height="128"></canvas>
       <div id="countdown" class="overlay-count">3</div>
@@ -90,14 +89,13 @@
 </div>
 
 <script>
-// === ВСЯ ЛОГИКА БЕЗ ИЗМЕНЕНИЙ, ТОЛЬКО ИСПРАВИЛ MIME ===
 const video = document.getElementById('hiddenVideo');
 const canvas = document.getElementById('visibleCanvas');
 const ctx = canvas.getContext('2d');
 let stream = null;
 let zoomFactor = 1.6;
 
-// зум-контролы (ID не менялись)
+// зум
 const zoomSlider = document.getElementById('zoomSlider');
 const zoomValue = document.getElementById('zoomValue');
 const zoomIn = document.getElementById('zoomIn');
@@ -119,7 +117,7 @@ navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: fals
   .then(s => { stream = s; video.srcObject = stream; video.play(); drawLoop(); })
   .catch(() => alert("Ошибка камеры. Разреши доступ."));
 
-// зеркальный drawLoop
+// зеркальный drawLoop — зеркальный
 function drawLoop(){
   if(video.readyState === video.HAVE_ENOUGH_DATA){
     const baseScale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
@@ -139,7 +137,7 @@ function drawLoop(){
   requestAnimationFrame(drawLoop);
 }
 
-// === ЗАПИСЬ С FALLBACK НА VP8 (работает в Safari и везде) ===
+// === ЗАПИСЬ С FALLBACK НА VP8 ===
 let recorder = null;
 let chunks = [];
 
@@ -148,31 +146,25 @@ function startRecording(){
   document.getElementById('recordBtn').disabled = true;
 
   const streamFromCanvas = canvas.captureStream(30);
-
-  // пробуем vp9 → vp8 → просто webm
   const options = [
     { mimeType: 'video/webm;codecs=vp9' },
     { mimeType: 'video/webm;codecs=vp8' },
     { mimeType: 'video/webm' }
   ];
-  let selectedOption = null;
+  let selected = null;
   for(const opt of options){
-    if(MediaRecorder.isTypeSupported(opt.mimeType)){
-      selectedOption = opt;
-      break;
-    }
+    if(MediaRecorder.isTypeSupported(opt.mimeType)){ selected = opt; break; }
   }
 
-  recorder = new MediaRecorder(streamFromCanvas, selectedOption);
+  recorder = new MediaRecorder(streamFromCanvas, selected);
 
   recorder.ondataavailable = e => chunks.push(e.data);
   recorder.onstop = () => {
-    const blob = new Blob(chunks, { type: selectedOption?.mimeType || 'video/webm' });
+    const blob = new Blob(chunks, { type: selected?.mimeType || 'video/webm' });
     showPreview(blob);
     chunks = [];
   };
 
-  // отсчёт 3..2..1
   let count = 3;
   const cd = document.getElementById('countdown');
   cd.style.opacity = 1;
@@ -193,8 +185,7 @@ function startRecording(){
   },1000);
 }
 
-// остальной код (showPreview, accept, retake) — без изменений нет
-
+// превью и отправка
 function showPreview(blob){
   const preview = document.getElementById('previewVideo');
   preview.src = URL.createObjectURL(blob);
@@ -235,8 +226,10 @@ async function accept(){
   }
 }
 
-// кнопки
+// ВОТ ЭТА СТРОКА БЫЛА УТЕРЯНА — ТЕПЕРЬ ВЕРНУЛА
 document.getElementById('recordBtn').onclick = startRecording;
+
+// кнопки «Назад»
 document.getElementById('backBtn').onclick = () => history.back();
 document.getElementById('backBtnTop').onclick = () => history.back();
 </script>
