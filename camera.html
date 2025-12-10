@@ -7,82 +7,80 @@
 <style>
   body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
   
-  /* Камера — только 512×128 в центре, и всё */
-  #video{
+  /* Единственное, что видно — белая рамка 512×128 */
+  #frame{
     position:fixed;
     top:50%; left:50%;
     width:512px;
     height:128px;
-    object-fit:cover;
-    transform:translate(-50%,-50%) scaleX(-1);
-    border:8px solid #fff;
-    border-radius:26px;
-    box-shadow:0 0 100px rgba(255,255,255,0.8);
+    border:10px solid #fff;
+    border-radius:30px;
+    box-shadow:0 0 140px rgba(255,255,255,1);
+    overflow:hidden;
     z-index:2;
+    transform:translate(-50%,-50%);
   }
-  #video.green{
+  #frame.green{
     border-color:#0f0;
-    box-shadow:0 0 120px rgba(0,255,0,1);
+    box-shadow:0 0 160px rgba(0,255,0,1.2);
+  }
+  
+  /* Камера — только внутри рамки, ничего больше не видно */
+  #video{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    transform:scaleX(-1);
   }
   
   #timer{
-    position:fixed;bottom:110px;left:50%;transform:translateX(-50%);
-    font-size:100px;font-weight:900;color:#fff;opacity:0;z-index:3;
+    position:fixed;
+    bottom:100px;
+    left:50%;
+    transform:translateX(-50%);
+    font-size:110px;
+    font-weight:900;
+    color:#fff;
+    opacity:0;
+    z-index:3;
   }
   
   #back{
-    position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
-    background:#222;color:#fff;padding:18px 50px;border:none;border-radius:16px;
-    font-size:22px;cursor:pointer;z-index:3;
+    position:fixed;
+    bottom:40px;
+    left:50%;
+    transform:translateX(-50%);
+    background:#111;
+    color:#fff;
+    padding:20px 60px;
+    border:2px solid #444;
+    border-radius:18px;
+    font-size:24px;
+    cursor:pointer;
+    z-index:3;
   }
-  
-  #result{
-    display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-    background:#111;padding:60px 40px;border-radius:28px;text-align:center;z-index:10;
-    max-width:90%;box-shadow:0 0 120px #000;color:#fff;
-  }
-  #result a{color:#f66;font-size:21px;word-break:break-all;margin:35px 0;display:block}
-  #result button{margin:15px;padding:20px 50px;font-size:26px;border:none;border-radius:18px;cursor:pointer}
-  #saveBtn{background:#b00;color:#fff}
-  #deleteBtn{background:#500;color:#fff}
-  #canvasBtn{background:#fff;color:#000}
 </style>
 </head>
 <body>
 
-<video id="video" autoplay playsinline></video>
+<!-- Рамка с камерой внутри — и больше ничего на экране -->
+<div id="frame">
+  <video id="video" autoplay playsinline></video>
+</div>
 
 <div id="timer">7</div>
 <button id="back" onclick="history.back()">НАЗАД</button>
 
-<div id="result">
-  <h2>Твои глаза добавлены навсегда</h2>
-  <p>Сохрани эту ссылку — только по ней можно удалить:</p>
-  <a id="deleteLink" href="#" target="_blank">загружается…</a>
-  <div>
-    <button id="saveBtn">СОХРАНИТЬ</button>
-    <button id="deleteBtn">УДАЛИТЬ</button>
-    <button id="canvasBtn">КАНВА</button>
-  </div>
-</div>
-
 <script>
 const video = document.getElementById('video');
+const frame = document.getElementById('frame');
 const timerEl = document.getElementById('timer');
-const result = document.getElementById('result');
-const deleteLink = document.getElementById('deleteLink');
 let countdown = null;
 let seconds = 7;
 
-navigator.mediaDevices.getUserMedia({ 
-  video: { 
-    facingMode: "user",
-    width: { exact: 512 },
-    height: { exact: 128 }
-  } 
-})
-.then(stream => video.srcObject = stream)
-.catch(() => alert("Разреши доступ к камере"));
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+  .then(stream => video.srcObject = stream)
+  .catch(() => alert("Разреши доступ к камере"));
 
 function eyesInFrame() {
   const c = document.createElement('canvas');
@@ -92,14 +90,14 @@ function eyesInFrame() {
   const d = ctx.getImageData(0,0,512,128).data;
   let dark = 0;
   for (let i = 0; i < d.length; i += 16) {
-    if ((d[i]+d[i+1]+d[i+2])/3 < 85) dark++;
+    if ((d[i]+d[i+1]+d[i+2])/3 < 80) dark++;
   }
   return dark > 6500 && dark < 17000;
 }
 
 setInterval(() => {
   if (eyesInFrame()) {
-    video.classList.add('green');
+    frame.classList.add('green');
     if (!countdown) {
       countdown = setInterval(() => {
         seconds--;
@@ -107,49 +105,32 @@ setInterval(() => {
         timerEl.style.opacity = 1;
         if (seconds <= 0) {
           clearInterval(countdown);
-          capture();
+          captureAndSave();
         }
       }, 1000);
     }
   } else {
-    video.classList.remove('green');
+    frame.classList.remove('green');
     seconds = 7;
     timerEl.style.opacity = 0;
     if (countdown) { clearInterval(countdown); countdown = null; }
   }
 }, 100);
 
-function capture() {
+function captureAndSave() {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 128;
   const ctx = c.getContext('2d');
   ctx.drawImage(video, 0, 0, 512, 128);
-  const url = c.toDataURL();
-
+  const dataUrl = c.toDataURL('image/png');
+  
   const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
   const id = Date.now().toString(36) + Math.random().toString(36);
-  eyes.push({id, url});
+  eyes.push({id, dataUrl});
   localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
 
-  deleteLink.textContent = location.origin + '/delete.html?id=' + id;
-  deleteLink.href = deleteLink.textContent;
-
-  video.style.display = 'none';
-  timerEl.style.display = 'none';
-  document.getElementById('back').style.display = 'none';
-  result.style.display = 'block';
+  location.href = `https://gorgonaeyes.netlify.app/result.html?id=${id}`;
 }
-
-document.getElementById('saveBtn').onclick = () => location.href = '/';
-document.getElementById('canvasBtn').onclick = () => location.href = '/canvas.html';
-document.getElementById('deleteBtn').onclick = () => {
-  const id = new URL(deleteLink.href).searchParams.get('id');
-  let eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
-  eyes = eyes.filter(e => e.id !== id);
-  localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
-  alert('Глаза удалены навсегда');
-  location.href = '/';
-};
 </script>
 </body>
 </html>
