@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Горгона — добавление взгляда</title>
+  <style>
+    body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
+    #video{width:100vw;height:100vh;object-fit:cover;transform:scaleX(-1)}
+    #overlay{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none}
+    #frame{border:4px solid white;width:512px;height:128px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:12px;box-shadow:0 0 40px rgba(255,255,255,0.4)}
+    #timer{font-size:72px;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);opacity:0}
+    #back{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:12px 30px;border:none;border-radius:8px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline></video>
+  <div id="overlay">
+    <div id="frame"></div>
+    <div id="timer">7</div>
+  </div>
+  <button id="back" onclick="history.back()">← НАЗАД</button>
+
+<script>
+const video = document.getElementById('video');
+const frame = document.getElementById('frame');
+const timerEl = document.getElementById('timer');
+let stream = null;
+let countdown = null;
+
+// включаем камеру
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+  .then(s => { stream = s; video.srcObject = stream; })
+  .catch(err => alert("Не удалось включить камеру. Разреши доступ."));
+
+// простая проверка, попали ли глаза в рамку
+function checkEyes() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
+  
+  const imgData = ctx.getImageData(0, 0, 512, 128).data;
+  let dark = 0;
+  for(let i=0; i<imgData.length; i+=4){
+    const brightness = (imgData[i]+imgData[i+1]+imgData[i+2])/3;
+    if(brightness < 100) dark++;
+  }
+  return dark > 8000; // грубая, но надёжная проверка тёмных зрачков
+}
+
+let seconds = 7;
+function startTimer() {
+  if(countdown) return;
+  countdown = setInterval(() => {
+    if(checkEyes()){
+      seconds--;
+      timerEl.textContent = seconds;
+      timerEl.style.opacity = 1;
+      if(seconds <= 0){
+        clearInterval(countdown);
+        saveEyes();
+      }
+    } else {
+      seconds = 7;
+      timerEl.style.opacity = 0;
+    }
+  }, 1000);
+}
+
+// автозапуск таймера при движении в кадре
+video.addEventListener('play', () => {
+  setInterval(() => {
+    if(checkEyes() && !countdown) startTimer();
+  }, 500);
+});
+
+function saveEyes() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
+  
+  canvas.toBlob(async blob => {
+    const form = new FormData();
+    form.append('file', blob, 'eyes.png');
+    
+    const resp = await fetch('/.netlify/functions/add-eyes', { method: 'POST', body: form });
+    const json = await resp.json();
+    
+    if(json.deleteUrl){
+      alert("Твои глаза добавлены навсегда.\n\nСохрани эту ссылку — только по ней можно удалить:\n" + json.deleteUrl);
+      location.href = '/';
+    } else {
+      alert("Ошибка: " + JSON.stringify(json));
+    }
+  });
+}
+</script>
+</body>
+</html>
