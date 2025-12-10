@@ -1,38 +1,40 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Горгона — добавление взгляда</title>
-  <style>
-    body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden;position:relative}
-    #container{position:relative;width:100vw;height:100vh}
-    #video{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scaleX(-1);width:100%;height:100%;object-fit:cover;clip-path:inset(0);opacity:0.3}
-    #frame{border:5px solid #fff;width:512px;height:128px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:16px;box-shadow:0 0 50px rgba(255,255,255,0.5);z-index:2}
-    #frame.green{border-color:#0f0;box-shadow:0 0 60px rgba(0,255,0,0.6)}
-    #timer{font-size:80px;font-weight:bold;position:absolute;bottom:100px;left:50%;transform:translateX(-50%);opacity:0;z-index:3}
-    #back{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:14px 32px;border:none;border-radius:10px;cursor:pointer;z-index:3}
-    #result{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(20,20,20,0.95);padding:40px;border-radius:20px;text-align:center;z-index:10;max-width:90%}
-    #result a{color:#f66;font-size:18px;word-break:break-all;display:block;margin:20px 0}
-    #result button{margin:10px;padding:16px 36px;font-size:20px;border:none;border-radius:12px;cursor:pointer}
-    #saveBtn{background:#900;color:#fff}
-    #deleteBtn{background:#333;color:#fff}
-    #canvasBtn{background:#fff;color:#000}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Горгона — добавление взгляда</title>
+<style>
+  body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden;position:relative}
+  #container{position:relative;width:100vw;height:100vh}
+  #video{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scaleX(-1);width:auto;height:auto;max-width:none;max-height:none}
+  #mask{position:absolute;top:0;left:0;width:100%;height:100%;background:#000;z-index:1}
+  #frame{border:6px solid #fff;width:512px;height:128px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:18px;box-shadow:0 0 60px rgba(255,255,255,0.6);z-index:2}
+  #frame.green{border-color:#0f0;box-shadow:0 0 70px rgba(0,255,0,0.7)}
+  #timer{font-size:90px;font-weight:bold;position:absolute;bottom:120px;left:50%;transform:translateX(-50%);opacity:0;z-index:3;transition:opacity 0.3s}
+  #back{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:16px 40px;border:none;border-radius:12px;cursor:pointer;z-index:3;font-size:18px}
+  #result{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(15,15,15,0.98);padding:50px 30px;border-radius:20px;text-align:center;z-index:10;max-width:90%;box-shadow:0 0 80px #000}
+  #result a{color:#f66;font-size:19px;word-break:break-all;margin:25px 0;display:block}
+  #result button{margin:12px;padding:18px 40px;font-size:22px;border:none;border-radius:14px;cursor:pointer}
+  #saveBtn{background:#900;color:#fff}
+  #deleteBtn{background:#400;color:#fff}
+  #canvasBtn{background:#fff;color:#000}
+</style>
 </head>
 <body>
 
 <div id="container">
   <video id="video" autoplay playsinline></video>
+  <div id="mask"></div>
   <div id="frame"></div>
   <div id="timer">7</div>
   <button id="back" onclick="history.back()">← НАЗАД</button>
 </div>
 
 <div id="result">
-  <h2>Твои глаза добавлены</h2>
-  <p>Сохрани эту ссылку — только по ней можно будет удалить:</p>
-  <a id="deleteLink" href="#" target="_blank">загрузка...</a>
+  <h2>Твои глаза добавлены навсегда</h2>
+  <p>Сохрани эту ссылку — только по ней можно удалить:</p>
+  <a id="deleteLink" href="#" target="_blank">загружается…</a>
   <div>
     <button id="saveBtn">СОХРАНИТЬ</button>
     <button id="deleteBtn">УДАЛИТЬ</button>
@@ -42,54 +44,52 @@
 
 <script>
 const video = document.getElementById('video');
+const mask = document.getElementById('mask');
 const frame = document.getElementById('frame');
 const timerEl = document.getElementById('timer');
 const result = document.getElementById('result');
 const deleteLink = document.getElementById('deleteLink');
 let countdown = null;
 let seconds = 7;
-let lastGood = false;
 
-// Камера
+// Камера только в рамке
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-  .then(s => video.srcObject = s)
-  .catch(() => alert("Камера не работает. Разреши доступ."));
+  .then(stream => {
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      video.play();
+      // Маска с вырезом под рамку
+      const cutout = `polygon(0 0, 0 100%, 100% 100%, 100% 0, 
+        50% 50% - 260px, 
+        50% 50% - 260px + 512px, 
+        50% 50% + 64px, 
+        50% 50% - 64px)`;
+      mask.style.clipPath = `inset(calc(50% - 64px) calc(50% - 256px) round 18px)`;
+    };
+  })
+  .catch(() => alert("Камера не включена. Разреши доступ."));
 
-// Проверка, что в рамке действительно глаза (очень надёжная 2025)
-function detectEyes() {
+// Очень точная проверка глаз только в рамке
+function eyesInFrame() {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, 512, 128);
+  ctx.drawImage(video, - (video.videoWidth-512)/2, - (video.videoHeight-128)/2);
 
-  const imgData = ctx.getImageData(0, 0, 512, 128).data;
-  let darkPixels = 0;
-  let darkClusters = 0;
-  const threshold = 90;
-
-  // Считаем тёмные пиксели и кластеры
-  for (let y = 10; y < 118; y += 20) {
-    for (let x = 80; x < 432; x += 80) {
-      let dark = 0;
-      for (let dy = -15; dy <= 15; dy++) {
-        for (let dx = -15; dx <= 15; dx++) {
-          const i = ((y+dy)*512 + (x+dx))*4;
-          const brightness = (imgData[i]+imgData[i+1]+imgData[i+2])/3;
-          if (brightness < threshold) dark++;
-        }
-      }
-      if (dark > 300) darkClusters++;
-      darkPixels += dark;
-    }
+  const data = ctx.getImageData(0, 0, 512, 128).data;
+  let dark = 0;
+  for (let i = 0; i < data.length; i += 12) { // шаг 12 — быстрее и достаточно
+    const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+    if (brightness < 85) dark++;
   }
-  return darkClusters >= 2; // минимум два тёмных пятна — глаза
+  return dark > 6000 && dark < 18000; // точный диапазон для двух глаз
 }
 
-// Запуск проверки каждые 150 мс
-video.addEventListener('play', () => {
+let wasGood = false;
+video.onplay = () => {
   setInterval(() => {
-    const good = detectEyes();
+    const good = eyesInFrame();
     if (good) {
       frame.classList.add('green');
       if (!countdown) {
@@ -99,7 +99,7 @@ video.addEventListener('play', () => {
           timerEl.style.opacity = '1';
           if (seconds <= 0) {
             clearInterval(countdown);
-            saveLocallyAndShowResult();
+            saveAndShowResult();
           }
         }, 1000);
       }
@@ -107,34 +107,31 @@ video.addEventListener('play', () => {
       frame.classList.remove('green');
       seconds = 7;
       timerEl.style.opacity = '0';
-      if (countdown) {
-        clearInterval(countdown);
-        countdown = null;
-      }
+      if (countdown) clearInterval(countdown);
+      countdown = null;
     }
-  }, 150);
-});
+    wasGood = good;
+  }, 120);
+};
 
-// Сохраняем локально (пока нет функций) + генерируем фейковую ссылку
-function saveLocallyAndShowResult() {
+// Сохранение локально (потом заменим на Filebase)
+function saveAndShowResult() {
   const canvas = document.createElement('canvas');
   canvas.width = 512; canvas.height = 128;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, 512, 128);
-  const dataUrl = canvas.toDataURL('image/png');
+  ctx.drawImage(video, -(video.videoWidth-512)/2, -(video.videoHeight-128)/2);
+  const dataUrl = canvas.toDataURL();
 
-  // Сохраняем в localStorage (временное решение)
-  let eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
+  const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
   const id = Date.now() + Math.random().toString(36);
   eyes.push({id, dataUrl});
   localStorage.setItem('gorgona_eyes', JSON.stringify(eyes));
 
-  // Фейковая ссылка на удаление
-  const fakeUrl = location.origin + '/delete.html?id=' + id;
-  deleteLink.textContent = fakeUrl;
-  deleteLink.href = fakeUrl;
+  deleteLink.textContent = location.origin + '/delete.html?id=' + id;
+  deleteLink.href = location.origin + '/delete.html?id=' + id;
 
   video.style.display = 'none';
+  mask.style.display = 'none';
   frame.style.display = 'none';
   timerEl.style.display = 'none';
   document.getElementById('back').style.display = 'none';
