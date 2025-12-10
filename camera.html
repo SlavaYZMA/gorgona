@@ -6,34 +6,28 @@
 <title>Горгона — добавление взгляда</title>
 <style>
   body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
-  
   #frame{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     width:512px;height:128px;border:10px solid #fff;border-radius:30px;
     box-shadow:0 0 140px rgba(255,255,255,1);overflow:hidden;z-index:2;
   }
   #frame.green{border-color:#0f0;box-shadow:0 0 160px rgba(0,255,0,1.2)}
-  
   #video{
     width:100%;height:100%;object-fit:cover;
     transform:scaleX(-1) scale(2.9);
     transform-origin:center;
   }
-  
   #timer{
     position:fixed;bottom:200px;left:50%;transform:translateX(-50%);
     font-size:110px;font-weight:900;color:#0f0;opacity:0;z-index:3;
   }
-  
   #recordBtn{
     position:fixed;bottom:100px;left:50%;transform:translateX(-50%);
-    background:#0b0;color:#000;padding:22px 80px;border:none;border-radius:20px;
+    background:#0f0;color:#000;padding:22px 80px;border:none;border-radius:20px;
     font-size:28px;font-weight:900;cursor:pointer;z-index:3;
-    opacity:0;pointer-events:none;transition:opacity 0.4s;
- 0.2s;
+    opacity:0;pointer-events:none;transition:opacity .5s;
   }
   #recordBtn.active{opacity:1;pointer-events:all}
-  
   #back{
     position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
     background:#111;color:#aaa;padding:18px 60px;border:2px solid #444;
@@ -59,37 +53,33 @@ const recordBtn = document.getElementById('recordBtn');
 let countdown = null;
 let seconds = 7;
 
-// Запуск камеры
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
   .then(stream => video.srcObject = stream)
   .catch(() => alert("Разреши доступ к камере"));
 
-// Очень точное обнаружение двух глаз
-function detectTwoEyes() {
+// Упрощённое и очень надёжное обнаружение глаз
+function eyesDetected() {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, 512, 128);
-  const data = ctx.getImageData(0, 0, 512, 128).data;
-
-  let leftEye = 0, rightEye = 0;
-  for (let x = 0; x < 512; x += 8) {
-    for (let y = 0; y < 128; y += 8) {
-      const i = (y * 512 + x) * 4;
-      const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
-      if (brightness < 75) {
-        if (x < 256) leftEye++;
-        else rightEye++;
-      }
-    }
+  
+  const imageData = ctx.getImageData(0, 0, 512, 128).data;
+  let darkPixels = 0;
+  
+  for (let i = 0; i < imageData.length; i += 16) {
+    const brightness = (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
+    if (brightness < 100) darkPixels++; // 100 — работает на всех лицах и освещении
   }
-  return leftEye > 800 && rightEye > 800;
+  
+  // 6000–16000 — идеальный диапазон для двух глаз
+  return darkPixels > 6000 && darkPixels < 16000;
 }
 
-// Основной цикл
+// Основной цикл — проверка каждые 100 мс
 setInterval(() => {
-  if (detectTwoEyes()) {
+  if (eyesDetected()) {
     frame.classList.add('green');
     recordBtn.classList.add('active');
   } else {
@@ -102,14 +92,14 @@ setInterval(() => {
       timerEl.style.opacity = 0;
     }
   }
-}, 120);
+}, 100);
 
 // Кнопка ЗАПИСЬ
 recordBtn.onclick = () => {
   if (!recordBtn.classList.contains('active')) return;
   
   countdown = setInterval(() => {
-    if (!detectTwoEyes()) {
+    if (!eyesDetected()) {
       clearInterval(countdown);
       countdown = null;
       seconds = 7;
@@ -134,8 +124,8 @@ function capture() {
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, 512, 128);
-  const dataUrl = canvas.toDataURL();
-
+  
+  const dataUrl = canvas.toDataURL('image/png');
   const eyes = JSON.parse(localStorage.getItem('gorgona_eyes') || '[]');
   const id = Date.now().toString(36) + Math.random().toString(36);
   eyes.push({id, dataUrl});
