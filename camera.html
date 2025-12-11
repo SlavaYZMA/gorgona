@@ -6,37 +6,59 @@
   <title>Горгона — добавление глаз</title>
   <style>
     body, html { margin:0; padding:0; height:100%; background:#000; color:#fff; overflow:hidden; font-family:system-ui, sans-serif; }
-    video { position:fixed; top:0; left:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); display:none; }
-    canvas { position:fixed; top:0; left:0; display:none; }
+    video { position:fixed; top:0; left:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); z-index:1; }
+    canvas { display:none; }
+    .frame {
+      position:fixed;
+      top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      width:512px;
+      height:128px;
+      max-width:90vw;
+      max-height:25vh;
+      border:6px solid #c00;
+      border-radius:16px;
+      z-index:2;
+      pointer-events:none;
+      box-shadow:0 0 30px rgba(255,0,0,0.5);
+    }
+    .frame.good { border-color:#0f0; box-shadow:0 0 30px rgba(0,255,0,0.6); }
     .container { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:30px; z-index:10; }
-    .frame { width:512px; height:128px; max-width:90vw; max-height:25vh; border:4px solid #c00; border-radius:16px; background:#111; }
-    .frame.good { border-color:#0f0; }
-    .timer { font-size:120px; font-weight:bold; margin:0; }
-    .status { font-size:24px; text-align:center; max-width:90%; }
-    button { padding:16px 32px; font-size:20px; cursor:pointer; border:none; border-radius:12px; margin:10px; min-width:280px; }
+    .timer { font-size:120px; font-weight:bold; margin:0; text-shadow:0 0 20px #000; }
+    .status { font-size:26px; text-align:center; max-width:90%; opacity:0.9; }
+    button {
+      padding:18px 36px;
+      font-size:22px;
+      cursor:pointer;
+      border:none;
+      border-radius:14px;
+      margin:8px;
+      min-width:300px;
+      font-weight:bold;
+    }
     #restart { background:#900; color:white; }
     #download { background:#333; color:white; }
     #save { background:white; color:black; }
-    .back { position:absolute; top:20px; left:20px; font-size:32px; opacity:0.5; text-decoration:none; color:#fff; }
+    .back { position:absolute; top:20px; left:20px; font-size:36px; opacity:0.6; text-decoration:none; color:#fff; }
   </style>
 </head>
 <body>
 
-<video id="video" autoplay playsinline></video>
+<video id="video" autoplay playsinline muted></video>
 <canvas id="hiddenCanvas" width="512" height="128"></canvas>
 
 <div class="container" id="step1">
-  <div class="status">Поднеси глаза в рамку</div>
+  <div class="status">Поднеси глаза в рамку и держи взгляд</div>
   <div class="frame" id="frame"></div>
   <div class="timer" id="timer">7</div>
 </div>
 
 <div class="container" id="step2" style="display:none;">
-  <div class="status">Вот что будет сохранено (только глаза):</div>
-  <img id="preview" style="width:512px; max-width:90vw; border:4px solid #0f0; border-radius:16px;" />
+  <div class="status">Вот что будет сохранено — только твои глаза:</div>
+  <img id="preview" style="width:512px; max-width:90vw; border:6px solid #0f0; border-radius:16px;" />
   <div>
-    <button id="restart">ЗАПИСАТЬ ЕЩЁ РАЗ</button>
-    <button id="download">ВЫГРУЗИТЬ НА КОМПЬЮТЕР (тест)</button>
+    <button id="restart">ЗАПИСАТЬ ЕЩЁ РАЗ</button><br>
+    <button id="download">ВЫГРУЗИТЬ НА КОМПЬЮТЕР (тест)</button><br>
     <button id="save">ОСТАВИТЬ НАВСЕГДА</button>
   </div>
 </div>
@@ -44,10 +66,12 @@
 <a href="/" class="back">←</a>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
 <script>
   const video = document.getElementById('video');
-  const hiddenCanvas = document.getElementById('hiddenCanvas');
-  const ctx = hiddenCanvas.getContext('2d');
+  const canvas = document.getElementById('hiddenCanvas');
+  const ctx = canvas.getContext('2d');
   const frame = document.getElementById('frame');
   const timerEl = document.getElementById('timer');
   const step1 = document.getElementById('step1');
@@ -58,69 +82,60 @@
   let seconds = 7;
   let finalBlob = null;
 
-  const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+  const faceMesh = new FaceMesh({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  });
   faceMesh.setOptions({
     maxNumFaces: 1,
     refineLandmarks: true,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
   });
-
   faceMesh.onResults(onResults);
 
-  async function startCamera() {
+  const camera = new Camera(video, {
+    onFrame: async () => await faceMesh.send({image: video}),
+    width: 1280,
+    height: 720
+  });
+
+  async function start() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-      video.srcObject = stream;
-      video.style.display = 'block';
-      const camera = new Camera(video, { onFrame: async () => await faceMesh.send({image: video}) });
-      camera.start();
+      await camera.start();
     } catch (e) {
-      alert('Разреши доступ к камере — это нужно только для твоих глаз, ничего не сохраняется и не уходит с телефона');
+      alert('Разреши камеру — это нужно только для твоих глаз. Ничего не сохраняется и не передаётся.');
     }
   }
 
   function onResults(results) {
-    ctx.clearRect(0, 0, 512, 128);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, 512, 128);
 
-    if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
-      const landmarks = results.multiFaceLandmarks[0];
-      const leftEye = landmarks[33];   // примерные точки
-      const rightEye = landmarks[263];
-      const top = landmarks[159];
-      const bottom = landmarks[145];
+    if (results.multiFaceLandmarks?.[0]) {
+      const lm = results.multiFaceLandmarks[0];
+      const left = lm[159], right = lm[386], top = lm[386], bottom = lm[374]; // точные точки ирисов
 
-      const x1 = Math.min(leftEye.x, rightEye.x) * video.videoWidth;
-      const x2 = Math.max(leftEye.x, rightEye.x) * video.videoWidth;
-      const y1 = Math.min(top.y, bottom.y) * video.videoHeight;
-      const y2 = Math.max(top.y, bottom.y) * video.videoHeight;
+      const xMin = Math.min(left.x, right.x) * video.videoWidth;
+      const xMax = Math.max(left.x, right.x) * video.videoWidth;
+      const yMin = Math.min(lm[145].y, lm[374].y) * video.videoHeight;
+      const yMax = Math.max(lm[159].y, lm[386].y) * video.videoHeight;
 
-      const width = x2 - x1;
-      const height = y2 - y1;
-      const centerX = x1 + width / 2;
-      const centerY = y1 + height / 2;
-
-      const targetW = 512;
-      const targetH = 128;
-      const scale = Math.max(targetW / width, targetH / height) * 1.3;
+      const w = xMax - xMin;
+      const h = yMax - yMin;
+      const scale = Math.max(512 / w, 128 / h) * 1.4;
 
       ctx.drawImage(
         video,
-        centerX - (targetW / scale) / 2,
-        centerY - (targetH / scale) / 2,
-        targetW / scale,
-        targetH / scale,
-        0, 0, targetW, targetH
+        xMin - w*0.2, yMin - h*0.3,
+        w*1.4, h*1.6,
+        0, 0, 512, 128
       );
 
       frame.classList.add('good');
       if (!countdown) startCountdown();
     } else {
       frame.classList.remove('good');
-      if (countdown) clearInterval(countdown);
-      countdown = null;
+      if (countdown) { clearInterval(countdown); countdown = null; }
       seconds = 7;
       timerEl.textContent = '7';
     }
@@ -132,8 +147,8 @@
       timerEl.textContent = seconds;
       if (seconds <= 0) {
         clearInterval(countdown);
-        finalBlob = dataURLtoBlob(hiddenCanvas.toDataURL('image/png'));
-        preview.src = hiddenCanvas.toDataURL('image/png');
+        finalBlob = dataURLtoBlob(canvas.toDataURL('image/png', 0.95));
+        preview.src = canvas.toDataURL('image/png');
         step1.style.display = 'none';
         step2.style.display = 'flex';
       }
@@ -163,6 +178,7 @@
     a.download = 'eyes-test.png';
     a.click();
   };
+  };
 
   document.getElementById('save').onclick = async () => {
     const form = new FormData();
@@ -171,21 +187,18 @@
     const res = await fetch('/.netlify/functions/upload', { method: 'POST', body: form });
     const data = await res.json();
 
-    if (data.deleteUrl) {
-      step2.innerHTML = `
-        <div class="status">Твои глаза теперь здесь навсегда</div>
-        <div style="font-size:18px; word-break:break-all; margin:20px;">
-          Сохрани эту ссылку — только по ней ты сможешь их удалить:
-        </div>
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(data.deleteUrl)}" />
-        <div style="margin:20px; font-size:20px; word-break:break-all;">${data.deleteUrl}</div>
-        <a href="/" style="color:#888; margin-top:40px; display:block;">← назад</a>
-      `;
-    }
+    step2.innerHTML = `
+      <div class="status">Твои глаза теперь здесь навсегда</div>
+      <div style="font-size:19px;margin:30px 20px;word-break:break-all;">
+        Сохрани эту ссылку — только по ней ты сможешь удалить свои глаза:
+      </div>
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(data.deleteUrl)}" style="margin:20px;">
+      <div style="font-size:21px;margin:20px;word-break:break-all;">${data.deleteUrl}</div>
+      <a href="/" style="color:#888;margin-top:50px;">← назад</a>
+    `;
   };
 
-  // старт
-  startCamera();
+  start();
 </script>
 </body>
 </html>
