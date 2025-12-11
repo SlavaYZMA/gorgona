@@ -1,219 +1,545 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Горгона — запись глаз</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7"></script>
-  <style>
-    body, html { margin:0; padding:0; height:100%; background:#000; color:#fff; font-family:system-ui,sans-serif; overflow:hidden; }
-    .back { position:fixed; top:20px; left:20px; font-size:28px; color:#888; cursor:pointer; z-index:100; }
-    .title { text-align:center; padding-top:40px; font-size:32px; margin-bottom:30px; }
-    .container { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; }
-    #frame { width:512px; height:128px; border:2px solid #fff; border-radius:12px; position:relative; }
-    #video { width:512px; height:128px; object-fit:cover; border-radius:12px; display:block; }
-    #timer { font-size:120px; margin-top:30px; color:#fff; }
-    #previewVideo { width:512px; height:128px; border:2px solid #fff; border-radius:12px; margin-top:20px; }
-    button { padding:16px 32px; margin:15px; font-size:20px; background:#fff; color:#000; border:none; border-radius:8px; cursor:pointer; }
-    button:hover { background:#ddd; }
-    .hidden { display:none; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Gorgona — camera</title>
+<style>
+  :root{ --bg:#000; --fg:#fff; --muted:#9b9b9b; }
+  html,body{ height:100%; margin:0; background:#000; color:var(--fg); font-family:Inter, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+  .screen{ display:flex; flex-direction:column; align-items:center; justify-content:flex-start; height:100%; gap:24px; padding-top:28px; box-sizing:border-box; }
+  header{ text-align:center; font-size:32px; color:var(--fg); user-select:none; }
+  .back{ position:fixed; left:12px; top:12px; color:var(--muted); font-size:20px; text-decoration:none; }
+  .stage{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; width:100%; flex:1; }
+  .frame-wrap{ width:100%; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; }
+  .camera-frame{
+    width:512px; height:128px; border-radius:12px; box-sizing:border-box;
+    border:2px solid #fff; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  video#preview, canvas#hiddenCanvas{
+    display:block;
+    transform: none;
+    -webkit-transform: none;
+    width:100%; height:100%;
+    object-fit:cover;
+  }
+  #overlay{
+    position:absolute; inset:0; pointer-events:none;
+    display:block;
+  }
+  .timer{
+    font-size:120px; line-height:1; font-weight:700; color:#fff; text-align:center; user-select:none; height:140px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  /* Preview controls (appear after recording) */
+  .controls{ display:flex; gap:12px; margin-top:12px; }
+  .btn{
+    background:#fff; color:#000; border:none; padding:12px 18px; border-radius:8px; font-weight:700; cursor:pointer;
+    font-size:16px;
+  }
+  .btn:active{ transform:translateY(1px); }
+  /* Hidden helpers */
+  #info{ display:none; color:#fff; font-size:12px; }
+  /* Make UI responsive */
+  @media (max-width:560px){
+    .camera-frame{ width:92vw; height: (92vw * 128 / 512); }
+    .timer{ font-size:56vw; }
+  }
+</style>
 </head>
 <body>
+  <a class="back" href="index.html" id="back">←</a>
+  <div class="screen">
+    <div class="spacer" style="height:6px;"></div>
+    <header>Поднеси глаза к рамке и держи взгляд</header>
 
-  <div class="back" onclick="window.location.href='index.html'">←</div>
-  <div class="title">Поднеси глаза к рамке и держи взгляд</div>
+    <main class="stage">
+      <div class="frame-wrap">
+        <div class="camera-frame" id="frame">
+          <video id="preview" autoplay playsinline muted></video>
+          <canvas id="overlay" width="512" height="128"></canvas>
+        </div>
 
-  <div class="container" id="recordSection">
-    <div id="frame">
-      <video id="video" autoplay playsinline muted></video>
-    </div>
-    <div id="timer">7</div>
+        <div class="timer" id="timer">—</div>
+      </div>
+
+      <div id="postControls" style="display:none; flex-direction:column; align-items:center;">
+        <div id="previewHolder" style="width:512px; height:128px; border-radius:12px; overflow:hidden; border:2px solid #fff; display:flex; align-items:center; justify-content:center; background:#000;">
+          <video id="recordedPreview" controls playsinline style="width:100%; height:100%; object-fit:cover;"></video>
+        </div>
+        <div class="controls" style="margin-top:14px;">
+          <button class="btn" id="retryBtn">ЗАПИСАТЬ ЗАНОВО</button>
+          <button class="btn" id="keepBtn">ОСТАВИТЬ НАВСЕГДА</button>
+          <button class="btn" id="downloadBtn">СКАЧАТЬ НА КОМПЬЮТЕР</button>
+        </div>
+      </div>
+
+    </main>
+
+    <div id="info">DEBUG INFO</div>
   </div>
 
-  <div class="container hidden" id="previewSection">
-    <div id="previewVideo" controls loop></div>
-    <div style="margin-top:30px;">
-      <button onclick="restart()">ЗАПИСАТЬ ЗАНОВО</button>
-      <button onclick="saveForever()">ОСТАВИТЬ НАВСЕГДА</button>
-      <button onclick="downloadVideo()">СКАЧАТЬ НА КОМПЬЮТЕР</button>
-    </div>
-  </div>
+<!-- dependencies -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@0.0.7/dist/face-landmarks-detection.min.js"></script>
 
-  <script>
-    const video = document.getElementById('video');
-    const timerEl = document.getElementById('timer');
-    const recordSection = document.getElementById('recordSection');
-    const previewSection = document.getElementById('previewSection');
-    const previewVideo = document.getElementById('previewVideo');
+<script>
+(async function(){
+  // Elements
+  const video = document.getElementById('preview');
+  const overlay = document.getElementById('overlay');
+  const overlayCtx = overlay.getContext('2d', { willReadFrequently: true });
+  const frameEl = document.getElementById('frame');
+  const timerEl = document.getElementById('timer');
+  const infoEl = document.getElementById('info');
+  const postControls = document.getElementById('postControls');
+  const recordedPreview = document.getElementById('recordedPreview');
+  const retryBtn = document.getElementById('retryBtn');
+  const keepBtn = document.getElementById('keepBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
 
-    let stream = null;
-    let mediaRecorder = null;
-    let recordedChunks = [];
-    let timer = 7;
-    let timerInterval = null;
-    let detectionInterval = null;
-    let model = null;
-    let isRecording = false;
-    let hasEyes = false;
-    let closedEyesStart = null;
+  // Config
+  const TARGET_W = 512, TARGET_H = 128;
+  const RECORD_SECONDS = 7.0;
+  const MIN_FPS = 15;
+  const MODEL_INPUT_SIZE = 256; // for detection speed
+  const MAX_MOVEMENT_PX = 30; // strong head movement threshold (pixels)
+  const EYE_CLOSED_THRESHOLD = 0.20; // normalized distance threshold (experimentally)
+  const EYE_CLOSED_TIME_RESET = 1.5 * 1000; // ms
+  const STABLE_REQUIRED_MS = 250; // small smoothing
+  const SAMPLING_INTERVAL = 100; // ms for checks
 
-    async function startCamera() {
+  // State
+  let stream = null;
+  let model = null;
+  let detectionEnabled = true;
+  let stableSince = null;
+  let eyesOutSince = null;
+  let eyesClosedSince = null;
+  let lastEyeCenter = null;
+  let countdownActive = false;
+  let countdownStart = null;
+  let recorder = null;
+  let recordedBlob = null;
+  let recordChunks = [];
+  let monitoringInterval = null;
+
+  // Hidden drawing canvas for exact 512x128 cropping and recording
+  const hiddenCanvas = document.createElement('canvas');
+  hiddenCanvas.width = TARGET_W;
+  hiddenCanvas.height = TARGET_H;
+  const hiddenCtx = hiddenCanvas.getContext('2d');
+
+  // Util helpers
+  function now(){ return performance.now(); }
+  function distance(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
+
+  // Load model with fallback logic
+  async function loadModel(){
+    try{
+      model = await faceLandmarksDetection.load(
+        faceLandmarksDetection.SupportedPackages.mediapipeFacemesh, 
+        { maxFaces:1 }
+      );
+      console.log('face model loaded');
+    }catch(e){
+      console.warn('face model load failed', e);
+      model = null;
+    }
+  }
+
+  // Start camera
+  async function startCamera(){
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:'user', width: { ideal:1280 }, height: { ideal:720 } },
+        audio:false
+      });
+      video.srcObject = stream;
+      await video.play();
+      // adjust overlay size to frame
+      overlay.width = TARGET_W;
+      overlay.height = TARGET_H;
+    }catch(err){
+      alert('Не удалось открыть камеру: ' + err.message);
+      throw err;
+    }
+  }
+
+  // Compute eye openness metric using eye landmark pairs.
+  // Using landmarks indices from mediapipe facemesh:
+  // left eye top/bottom approximations: 159 (upper), 145 (lower)
+  // right eye top/bottom: 386 (upper), 374 (lower)
+  // but we'll fallback to average of small sets if available.
+  function computeEyeOpenness(landmarks){
+    try{
+      // if model returned normalized coordinates within video resolution
+      // landmarks are array of {x,y,z}
+      const getPoint = idx => ({ x: landmarks[idx].x * video.videoWidth, y: landmarks[idx].y * video.videoHeight });
+      // choose indices resiliently:
+      const leftUpper = landmarks[159] ? getPoint(159) : getPoint(145);
+      const leftLower = landmarks[145] ? getPoint(145) : getPoint(159);
+      const rightUpper = landmarks[386] ? getPoint(386) : getPoint(374);
+      const rightLower = landmarks[374] ? getPoint(374) : getPoint(386);
+      const leftDist = distance(leftUpper, leftLower);
+      const rightDist = distance(rightUpper, rightLower);
+      // normalize by inter-eye distance
+      const leftEyeOuter = getPoint(33), rightEyeOuter = getPoint(263);
+      const interEye = distance(leftEyeOuter, rightEyeOuter) || 1;
+      return { left: leftDist / interEye, right: rightDist / interEye, avg: (leftDist+rightDist)/(2*interEye) };
+    }catch(e){
+      return { left:1, right:1, avg:1 };
+    }
+  }
+
+  // Compute eye centers (in video coordinates)
+  function computeEyeCenters(landmarks){
+    try{
+      const l = landmarks;
+      const avgPoint = idxs => {
+        let sx=0, sy=0, c=0;
+        for(const i of idxs){ sx += l[i].x * video.videoWidth; sy += l[i].y * video.videoHeight; c++; }
+        return { x: sx/c, y: sy/c };
+      };
+      const leftCenter = avgPoint([33,133,160,159,158]);
+      const rightCenter = avgPoint([263,362,387,386,385]);
+      const center = { x: (leftCenter.x + rightCenter.x)/2, y: (leftCenter.y + rightCenter.y)/2 };
+      return { leftCenter, rightCenter, center };
+    }catch(e){
+      return null;
+    }
+  }
+
+  // Draw overlay (for alignment guides, debug)
+  function drawOverlay(cropX, cropY, cropW, cropH, eyeBox){
+    overlayCtx.clearRect(0,0,overlay.width,overlay.height);
+    // dim background grid (none per spec) - keep just subtle guide
+    overlayCtx.strokeStyle = 'rgba(255,255,255,0.12)';
+    overlayCtx.lineWidth = 1;
+    // draw center
+    overlayCtx.beginPath();
+    overlayCtx.rect(0,0,overlay.width,overlay.height);
+    overlayCtx.stroke();
+
+    if(eyeBox){
+      overlayCtx.strokeStyle = 'rgba(0,255,0,0.6)';
+      overlayCtx.lineWidth = 2;
+      overlayCtx.strokeRect(eyeBox.x, eyeBox.y, eyeBox.w, eyeBox.h);
+    }
+  }
+
+  // Main monitor loop: detect face/eyes and manage recording state
+  async function monitorLoop(){
+    if(!video || video.readyState < 2) return;
+    let prediction = null;
+    if(model){
+      try{
+        prediction = await model.estimateFaces({input: video, returnTensors:false, flipHorizontal:true});
+        // keep single face
+        prediction = prediction && prediction.length ? prediction[0] : null;
+      }catch(e){
+        prediction = null;
+      }
+    }
+
+    let eyesPresent = false;
+    let eyesOpen = true;
+    let strongMovement = false;
+    let eyeCenter = null;
+
+    if(prediction && prediction.scaledMesh){
+      const landmarks = prediction.scaledMesh;
+      // compute centers
+      const centers = computeEyeCenters(landmarks);
+      if(centers){
+        eyeCenter = centers.center;
+        eyesPresent = true;
+      }
+      // openness
+      const openness = computeEyeOpenness(landmarks);
+      eyesOpen = openness.avg > EYE_CLOSED_THRESHOLD;
+    } else {
+      // fallback: approximate center in video
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if(vw && vh){
+        eyeCenter = { x: vw/2, y: vh/2 };
+        // treat as present; can't check open/closed reliably
+        eyesPresent = true;
+        eyesOpen = true;
+      }
+    }
+
+    // strong movement: compare lastEyeCenter
+    if(eyeCenter && lastEyeCenter){
+      const mv = distance(eyeCenter, lastEyeCenter);
+      if(mv > MAX_MOVEMENT_PX) strongMovement = true;
+    }
+    lastEyeCenter = eyeCenter;
+
+    // Determine cropping: center eyes in output frame
+    // We'll create a crop box from eyeCenter scaled to target aspect ratio
+    const vw = video.videoWidth, vh = video.videoHeight;
+    let crop = { x:0, y:0, w:vw, h:vh };
+    if(eyeCenter && vw && vh){
+      // Determine crop width by desired aspect ratio and keep eyeCenter near vertical center of crop
+      const targetRatio = TARGET_W / TARGET_H; // 4:1
+      // We'll choose crop width as min(vw, vh * targetRatio)
+      let cropH = Math.min(vh, Math.round(vw / targetRatio));
+      let cropW = Math.round(cropH * targetRatio);
+      // center crop horizontally on eyeCenter.x, vertically set so eyes are roughly mid-height
+      let x = Math.round(eyeCenter.x - cropW/2);
+      let y = Math.round(eyeCenter.y - cropH/2);
+      // clamp
+      x = Math.max(0, Math.min(vw - cropW, x));
+      y = Math.max(0, Math.min(vh - cropH, y));
+      crop = { x, y, w: cropW, h: cropH };
+      // eyeBox for overlay in target canvas coords
+      const scaleX = TARGET_W / crop.w;
+      const scaleY = TARGET_H / crop.h;
+      const eyeBox = {
+        x: Math.max(0, Math.round((eyeCenter.x - crop.x) * scaleX - 40)),
+        y: Math.max(0, Math.round((eyeCenter.y - crop.y) * scaleY - 30)),
+        w: 80, h: 60
+      };
+      drawOverlay(crop.x, crop.y, crop.w, crop.h, eyeBox);
+    } else {
+      overlayCtx.clearRect(0,0,overlay.width,overlay.height);
+    }
+
+    // State transitions for timer control
+    const t = now();
+
+    // Reset conditions
+    if(!eyesPresent){ eyesOutSince = eyesOutSince || t; } else { eyesOutSince = null; }
+    if(!eyesOpen){ eyesClosedSince = eyesClosedSince || t; } else { eyesClosedSince = null; }
+    if(strongMovement){ stableSince = null; }
+
+    // If eyes out or closed longer than thresholds => reset countdown
+    if(eyesOutSince || (eyesClosedSince && (t - eyesClosedSince) > EYE_CLOSED_TIME_RESET) || strongMovement){
+      if(countdownActive){
+        // reset recording if in countdown
+        stopRecordingWithReset('reset');
+      } else {
+        // just show dash
+        timerEl.textContent = '—';
+      }
+      stableSince = null;
+      countdownActive = false;
+      countdownStart = null;
+      // continue loop
+      return;
+    }
+
+    // If present and open => mark stability start if not set
+    if(eyesPresent && eyesOpen){
+      stableSince = stableSince || t;
+    }
+
+    // Determine if stable long enough to start countdown: keep very short smoothing
+    if(stableSince && (t - stableSince) > STABLE_REQUIRED_MS){
+      if(!countdownActive){
+        // start countdown from RECORD_SECONDS after a short delay of 300ms to be forgiving
+        countdownActive = true;
+        countdownStart = t;
+        // start actual recording after no more than 200ms to allow sync
+        startRecordingCrop(crop);
+      }
+    }
+
+  } // end monitorLoop
+
+  // Start MediaRecorder of the hiddenCanvas; it will be fed by draw loop
+  function startRecordingCrop(crop){
+    if(recorder) return; // already recording
+    recordChunks = [];
+    // draw loop: copy frames into hiddenCanvas at fixed FPS
+    const fps = 20;
+    let lastFrameTime = now();
+    let startedAt = now();
+    let drawReq = null;
+
+    function drawFrame(){
+      const cur = performance.now();
+      // draw current video frame cropped into hiddenCanvas
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: 512, height: 128, facingMode: "user" }, 
-          audio: false 
-        });
-        video.srcObject = stream;
-        video.play();
+        hiddenCtx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, TARGET_W, TARGET_H);
+      } catch(e){
+        // fallback: center-crop draw
+        hiddenCtx.clearRect(0,0,TARGET_W,TARGET_H);
+        hiddenCtx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, TARGET_W, TARGET_H);
+      }
+      // schedule next according to fps
+      const delay = Math.max(0, (1000/fps) - (performance.now() - cur));
+      drawReq = setTimeout(drawFrame, delay);
+    }
+    drawFrame();
 
-        // Загружаем модель BlazeFace (лёгкая и работает везде)
-        model = await blazeface.load();
-
-        detectionInterval = setInterval(detectEyes, 100);
-      } catch (err) {
-        alert("Не удалось получить доступ к камере. Разреши доступ и обнови страницу.");
-        console.error(err);
+    const canvasStream = hiddenCanvas.captureStream(20); // 20 fps
+    const options = { mimeType: 'video/webm;codecs=vp8' };
+    try {
+      recorder = new MediaRecorder(canvasStream, options);
+    } catch(e){
+      try {
+        recorder = new MediaRecorder(canvasStream);
+      } catch(err){
+        alert('Ваш браузер не поддерживает MediaRecorder для записи. Попробуйте Chrome/Edge/Firefox 최신 версию.');
+        clearTimeout(drawReq);
+        recorder = null;
+        return;
       }
     }
 
-    function detectEyes() {
-      if (!model || isRecording) return;
+    recorder.ondataavailable = (ev) => {
+      if(ev.data && ev.data.size) recordChunks.push(ev.data);
+    };
 
-      model.estimateFaces(video, false).then(predictions => {
-        if (predictions.length === 0) {
-          resetTimer();
-          return;
-        }
+    recorder.onstop = () => {
+      clearTimeout(drawReq);
+      const blob = new Blob(recordChunks, { type: 'video/webm' });
+      recordedBlob = blob;
+      showPreviewBlob(blob);
+      recorder = null;
+      countdownActive = false;
+      countdownStart = null;
+    };
 
-        const landmarks = predictions[0].landmarks;
-        const leftEye = landmarks[0];   // левый глаз
-        const rightEye = landmarks[1];  // правый глаз
+    recorder.start();
+    // ensure recording lasts exactly RECORD_SECONDS seconds
+    setTimeout(()=> {
+      if(recorder && recorder.state === 'recording') recorder.stop();
+    }, Math.round(RECORD_SECONDS * 1000));
+    // animate timer countdown visible
+    animateCountdown(RECORD_SECONDS);
+  }
 
-        const eyeCenterX = (leftEye[0] + rightEye[0]) / 2;
-        const eyeCenterY = (leftEye[1] + rightEye[1]) / 2;
-        const eyeDistance = Math.abs(rightEye[0] - leftEye[0]);
-
-        // Проверяем, что глаза в центре рамки и достаточно крупные
-        const inFrame = eyeCenterX > 150 && eyeCenterX < 362 && 
-                        eyeCenterY > 30 && eyeCenterY < 98 &&
-                        eyeDistance > 80 && eyeDistance < 180;
-
-        // Примерная проверка закрытых глаз
-        const top = predictions[0].topLeft[1];
-        const bottom = predictions[0].bottomRight[1];
-        const eyeHeight = bottom - top;
-        const isClosed = eyeHeight < 50;
-
-        if (isClosed) {
-          if (!closedEyesStart) closedEyesStart = Date.now();
-          else if (Date.now() - closedEyesStart > 1500) {
-            resetTimer();
-            return;
-          }
-        } else {
-          closedEyesStart = null;
-        }
-
-        if (inFrame && !hasEyes) {
-          hasEyes = true;
-          startTimer();
-        } else if (!inFrame && hasEyes) {
-          resetTimer();
-        }
-      });
+  function stopRecordingWithReset(reason){
+    // stop recorder and discard
+    if(recorder && recorder.state === 'recording'){
+      recorder.stop();
     }
+    recordedBlob = null;
+    countdownActive = false;
+    countdownStart = null;
+    timerEl.textContent = '—';
+  }
 
-    function startTimer() {
-      if (timerInterval) return;
-      timer = 7;
-      timerEl.textContent = timer;
-      timerInterval = setInterval(() => {
-        timer--;
-        timerEl.textContent = timer;
-        if (timer <= 0) {
-          clearInterval(timerInterval);
-          timerInterval = null;
-          finishRecording();
-        }
-      }, 1000);
-
-      // Начинаем запись
-      recordedChunks = [];
-      const options = { mimeType: 'video/webm;codecs=vp9' };
-      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-        options.mimeType = 'video/webm';
-      }
-      mediaRecorder = new MediaRecorder(stream, options);
-      mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-      mediaRecorder.start();
-      isRecording = true;
-    }
-
-    function resetTimer() {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-      }
-      timer = 7;
-      timerEl.textContent = "7";
-      hasEyes = false;
-      if (mediaRecorder && isRecording) {
-        mediaRecorder.stop();
-        isRecording = false;
+  // Visual countdown during recording
+  function animateCountdown(duration){
+    const start = performance.now();
+    function tick(){
+      const elapsed = (performance.now() - start)/1000;
+      const remaining = Math.max(0, Math.ceil(duration - elapsed));
+      timerEl.textContent = String(remaining);
+      if(elapsed < duration + 0.05){
+        requestAnimationFrame(tick);
+      } else {
+        timerEl.textContent = '0';
       }
     }
+    tick();
+  }
 
-    function finishRecording() {
-      mediaRecorder.stop();
-      isRecording = false;
+  // Show preview and controls after successful recording
+  function showPreviewBlob(blob){
+    const url = URL.createObjectURL(blob);
+    recordedPreview.src = url;
+    recordedPreview.play().catch(()=>{});
+    postControls.style.display = 'flex';
+  }
 
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      previewVideo.src = url;
+  // Retry logic
+  retryBtn.addEventListener('click', ()=>{
+    // hide preview, reset states
+    postControls.style.display = 'none';
+    recordedPreview.pause();
+    recordedPreview.src = '';
+    recordedBlob = null;
+    timerEl.textContent = '—';
+    stableSince = null;
+    eyesOutSince = null;
+    eyesClosedSince = null;
+    lastEyeCenter = null;
+  });
 
-      recordSection.classList.add('hidden');
-      previewSection.classList.remove('hidden');
+  // Keep forever: placeholder POST to Netlify function
+  keepBtn.addEventListener('click', async ()=>{
+    if(!recordedBlob){ alert('Нет записанного видео'); return; }
+    keepBtn.disabled = true;
+    keepBtn.textContent = 'ОТПРАВКА...';
+    try{
+      // example: send to Netlify function endpoint (placeholder)
+      // produce a FormData containing the file
+      const fd = new FormData();
+      fd.append('file', recordedBlob, 'eyes.webm');
+      // placeholder URL - replace with actual Netlify function endpoint in production
+      const res = await fetch('/.netlify/functions/uploadEyes', { method:'POST', body: fd });
+      // We don't require success in this test; just log
+      console.log('upload response', res);
+      keepBtn.textContent = 'ОТПРАВЛЕНО';
+      // In prod, receive CID and show QR + removal link - here we only log
+      alert('Тест: видео помечено как отправленное (заглушка). В реальной системе будет загружено в Filebase.');
+    }catch(e){
+      console.error('upload error', e);
+      alert('Ошибка отправки: ' + e.message);
+      keepBtn.textContent = 'ОСТАВИТЬ НАВСЕГДА';
+    } finally {
+      keepBtn.disabled = false;
     }
+  });
 
-    function restart() {
-      previewSection.classList.add('hidden');
-      recordSection.classList.remove('hidden');
-      startCamera();
+  // Download button
+  downloadBtn.addEventListener('click', ()=>{
+    if(!recordedBlob) return;
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(recordedBlob);
+    a.href = url;
+    a.download = 'gorgona_eyes.webm';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // Periodic monitor starter
+  async function startMonitoring(){
+    monitoringInterval = setInterval(async ()=> {
+      try {
+        await monitorLoop();
+      } catch(e){
+        console.error(e);
+      }
+    }, SAMPLING_INTERVAL);
+  }
+
+  // Initialize sequence
+  try{
+    await loadModel();
+    await startCamera();
+    // Wait for video metadata to be ready
+    await new Promise(res => {
+      if(video.readyState >= 2) return res();
+      video.onloadedmetadata = () => res();
+      setTimeout(res, 1500);
+    });
+    // Hide preview controls until recording done
+    postControls.style.display = 'none';
+    // Start monitoring loop
+    startMonitoring();
+  }catch(e){
+    console.error('init error', e);
+    alert('Ошибка инициализации: ' + e.message);
+  }
+
+  // Clean-up when unload
+  window.addEventListener('beforeunload', ()=>{
+    clearInterval(monitoringInterval);
+    if(stream){
+      stream.getTracks().forEach(t=>t.stop());
     }
+  });
 
-    function downloadVideo() {
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'gorgona-eyes.webm';
-      a.click();
-    }
-
-    function saveForever() {
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const formData = new FormData();
-      formData.append('file', blob, 'eyes.webm');
-
-      // Заглушка — в будущем здесь будет Netlify Function
-      fetch('/.netlify/functions/upload', {
-        method: 'POST',
-        body: formData
-      })
-      .then(res => res.json())
-      .then(data => {
-        console.log('Успешно загружено:', data);
-        alert('Твои глаза теперь смотрят на мир вечно.');
-      })
-      .catch(err => {
-        console.error(err);
-        alert('Ошибка загрузки. Попробуй позже.');
-      });
-    }
-
-    // Запуск
-    startCamera();
-  </script>
+})();
+</script>
 </body>
 </html>
