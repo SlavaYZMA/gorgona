@@ -36,61 +36,64 @@
   const retry = document.getElementById('retry');
   const send = document.getElementById('send');
 
-  let stream, recorder, chunks = [], countdown;
+  let stream, recorder, chunks = [];
 
   async function start() {
     stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}, audio:false});
     video.srcObject = stream;
+    video.play();
     drawLoop();
+
+    // Ждём 1.5 сек, потом начинаем 3-секундный отсчёт
+    setTimeout(() => {
+      timer.style.opacity = 1;
+      let sec = 3;
+      const int = setInterval(() => {
+        sec--;
+        timer.textContent = sec;
+        if (sec <= 0) {
+          clearInterval(int);
+          timer.textContent = "Запись!";
+          startRecording();
+        }
+      }, 1000);
+    }, 1500);
   }
 
   function drawLoop() {
-    ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
+    // Берём ровно центральную область под рамку
+    const srcX = (video.videoWidth - 512) / 2;
+    const srcY = (video.videoHeight - 128) / 2;
+    ctx.drawImage(video, srcX, srcY, 512, 128, 0, 0, 512, 128);
     requestAnimationFrame(drawLoop);
   }
 
-  // Ждём 3 секунды неподвижности (просто по таймеру после загрузки)
-  setTimeout)
-  setTimeout(() => {
-    timer.style.opacity = 1;
-    let sec = 3;
-    const int = setInterval(() => {
-      sec--;
-      timer.textContent = sec;
-      if (sec <= 0) {
-        clearInterval(int);
-        timer.textContent = "Запись!";
-        startRecording();
-      }
-    }, 1000);
-  }, 1500);
-
   function startRecording() {
     chunks = [];
-    recorder = new MediaRecorder(stream, {mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/mp4'});
+    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' :
+                  MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'video/mp4';
+    recorder = new MediaRecorder(stream, {mimeType: mime});
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = () => {
-      const blob = new Blob(chunks, {type: 'video/webm'});
+      const blob = new Blob(chunks, {type: mime});
       const url = URL.createObjectURL(blob);
       preview.src = url;
       preview.style.display = 'block';
       video.style.display = 'none';
       canvas.style.display = 'none';
       timer.style.display = 'none';
-      info.textContent = "Готово!";
+      info.textContent = "Готово! Твои глаза записаны";
       retry.style.display = 'block';
       send.style.display = 'block';
 
       retry.onclick = () => location.reload();
-      send.onclick = () => upload(blob);
+      send.onclick = () => {
+        // Следующий шаг — реальная отправка
+        alert("Видео готово к отправке в Горгону!\nСейчас добавим функцию загрузки.");
+      };
     };
     recorder.start();
-    setTimeout(() => recorder.stop(), 5000);
-  }
-
-  async function upload(blob) {
-    // Это мы сделаем в следующем шаге через Netlify Function
-    alert("Видео записано! Ждём upload-функцию в следующем файле");
+    setTimeout(() => recorder.stop(), 5000); // ровно 5 секунд
   }
 
   start();
