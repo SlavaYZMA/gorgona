@@ -5,69 +5,138 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Горгона — запись глаз</title>
   <style>
-    body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
-    #container{position:relative;width:100vw;height:100vh;background:#000}
-    #video{position:absolute;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:0.3}
-    #mask{position:absolute;top:0;left:0;width:100%;height:100%;background:#000;z-index:1}
-    #frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:512px;height:128px;border:5px solid #fff;border-radius:16px;overflow:hidden;z-index:2;box-shadow:0 0 60px rgba(255,255,255,0.8)}
-    #timer{position:absolute;top:80px;left:0;width:100%;text-align:center;font-size:72px;font-weight:bold;color:#0f0;text-shadow:0 0 20px #000;z-index:3;opacity:0}
-    #info{position:absolute;bottom:120px;left:0;width:100%;text-align:center;font-size:26px;z-index:3}
-    button{position:fixed;bottom:20px;width:calc(50% - 20px);padding:20px;font-size:22px;border:none;border-radius:12px;cursor:pointer;z-index:10}
-    #retry{left:10px;background:#900;color:#fff;display:none}
-    #send{right:10px;background:#090;color:#fff;display:none}
+    /* Убираем все отступы, делаем чёрный фон на всю страницу */
+    body, html { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
+
+    /* Контейнер на весь экран */
+    #container { position:relative; width:100vw; height:100vh; background:#000; }
+
+    /* Скрытое видео — используется только как источник */
+    #video { position:absolute; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); display:none; }
+
+    /* Canvas — это и есть наша видимая рамка с глазами */
+    #frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 512px;
+      height: 128px;
+      border: 6px solid #fff;
+      border-radius: 16px;
+      box-shadow: 0 0 60px 30px rgba(255,255,255,0.6);
+      z-index: 10;
+    }
+
+    /* Текст-инструкция */
+    #info {
+      position: absolute;
+      bottom: 140px;
+      width: 100%;
+      text-align: center;
+      font-size: 26px;
+      color: #fff;
+      z-index: 20;
+    }
+
+    /* Таймер обратного отсчёта */
+    #timer {
+      position: absolute;
+      top: 100px;
+      width: 100%;
+      text-align: center;
+      font-size: 80px;
+      font-weight: bold;
+      color: #0f0;
+      text-shadow: 0 0 20px #000;
+      z-index: 20;
+      opacity: 0;
+    }
+
+    /* Кнопки внизу */
+    button {
+      position: fixed;
+      bottom: 30px;
+      width: calc(50% - 30px);
+      padding: 20px;
+      font-size: 22px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      z-index: 30;
+      display: none;
+    }
+    #retry { left: 15px; background:#900; color:#fff; }
+    #send  { right: 15px; background:#090; color:#fff; }
   </style>
 </head>
 <body>
 
 <div id="container">
   <video id="video" autoplay playsinline muted></video>
-  <div id="mask"></div>
-  <div id="frame">
-    <canvas id="canvas" width="512" height="128"></canvas>
-  </div>
+  <canvas id="frame" width="512" height="128"></canvas>
+  
   <div id="timer">3</div>
-  <div id="info">Поднеси глаза в рамку<br>Держи неподвижно 3 секунды</div>
+  <div id="info">Поднеси глаза точно в белую рамку<br>Держи неподвижно 3 секунды</div>
+  
   <button id="retry">Перезаписать</button>
   <button id="send">Отправить в Горгону</button>
 </div>
 
 <script>
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  const timer = document.getElementById('timer');
-  const info = document.getElementById('info');
-  const retry = document.getElementById('retry');
-  const send = document.getElementById('send');
+  // Получаем элементы
+  const video   = document.getElementById('video');    // скрытое видео — источник
+  const canvas  = document.getElementById('frame');    // видимая рамка (то, что видит пользователь)
+  const ctx     = canvas.getContext('2d');
+  const timer   = document.getElementById('timer');
+  const info    = document.getElementById('info');
+  const retry  = document.getElementById('retry');
+  const send    = document.getElementById('send');
 
-  let stream, recorder, chunks = [];
+  let stream = null;
+  let recorder = null;
+  let chunks = [];
 
-  async function start() {
+  // === 1. Запускаем камеру ===
+  async function init() {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: {ideal: 1920}, height: {ideal: 1080} },
+      video: { facingMode: "user" },
       audio: false
     });
     video.srcObject = stream;
     video.play();
 
-    // Рисуем только внутри рамки
-    function draw() {
-      ctx.save();
-      ctx.scale(-1, 1); // зеркалим
-      ctx.drawImage(video, -512, 0);
-      ctx.restore();
-      requestAnimationFrame(draw);
-    }
-    draw();
+    // Ждём, пока видео загрузится
+    video.onloadedmetadata = () => {
+      drawToCanvas(); // начинаем рисовать камеру в рамку
+      startCountdown(); // через 1.5 сек запускаем отсчёт
+    };
+  }
 
-    // Через 1.5 сек после запуска — начинаем отсчёт
+  // === 2. Рисуем камеру ТОЛЬКО внутри рамки (512×128) ===
+  function drawToCanvas() {
+    // Центрируем камеру по горизонтали и вертикали
+    const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+    const x = (video.videoWidth - canvas.width / scale) / 2;
+    const y = (video.videoHeight - canvas.height / scale) / 2;
+
+    ctx.save();
+    ctx.scale(-1, 1); // зеркалим (как селфи)
+    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    requestAnimationFrame(drawToCanvas);
+  }
+
+  // === 3. Через 1.5 сек — начинаем 3-секундный отсчёт ===
+  function startCountdown() {
     setTimeout(() => {
       timer.style.opacity = 1;
-      let sec = 3;
+      let count = 3;
       const interval = setInterval(() => {
-        sec--;
-        timer.textContent = sec > 0 ? sec : "Запись!";
-        if (sec <= -1) {
+        count--;
+        timer.textContent = count > 0 ? count : "Запись!";
+        if (count <= -1) {
           clearInterval(interval);
           startRecording();
         }
@@ -75,42 +144,49 @@
     }, 1500);
   }
 
+  // === 4. Записываем ровно 5 секунд ТОЛЬКО то, что в canvas (то есть только глаза) ===
   function startRecording() {
     chunks = [];
-    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
-                 ? 'video/webm;codecs=vp9' 
-                 : 'video/webm';
-    
-    recorder = new MediaRecorder(stream, { mimeType: mime });
+
+    // Создаём поток из canvas (а не из видео!)
+    const canvasStream = canvas.captureStream(30); // 30 fps
+    recorder = new MediaRecorder(canvasStream, {
+      mimeType: 'video/webm;codecs=vp9'
+    });
+
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mime });
-      const url = URL.createObjectURL(blob);
-      
-      // Превью — только глаза
-      const prev = document.createElement('video');
-      prev.src = url;
-      prev.controls = true;
-      prev.loop = true;
-      prev.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:512px;height:128px;border:5px solid #fff;border-radius:16px;z-index:100';
-      document.body.appendChild(prev);
-      
-      info.textContent = "Готово. Твои глаза записаны навсегда.";
-      retry.style.display = 'block';
-      send.style.display = 'block';
-      
-      retry.onclick = () => location.reload();
-      send.onclick = () => uploadToGorgona(blob);
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      showPreview(blob);
     };
+
     recorder.start();
-    setTimeout(() => recorder.stop(), 5000);
+    setTimeout(() => recorder.stop(), 5000); // ровно 5 секунд
+    info.textContent = "Идёт запись…";
   }
 
-  function uploadToGorgona(blob) {
-    alert("Видео записано — только глаза.\nСкоро добавим реальную загрузку в Filebase.");
+  // === 5. Показываем превью (только глаза) ===
+  function showPreview(blob) {
+    const url = URL.createObjectURL(blob);
+    const prev = document.createElement('video');
+    prev.src = url;
+    prev.controls = true;
+    prev.loop = true;
+    prev.style = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:512px;height:128px;border:6px solid #fff;border-radius:16px;z-index:100;background:#000';
+    document.body.appendChild(prev);
+
+    info.textContent = "Готово. Только твои глаза.";
+    retry.style.display = 'block';
+    send.style.display = 'block';
+
+    retry.onclick = () => location.reload();
+    send.onclick = () => {
+      alert("Видео готово к отправке в Горгону!\nСледующий шаг — загрузка в Filebase.");
+    };
   }
 
-  start();
+  // === Запуск ===
+  init();
 </script>
 </body>
 </html>
