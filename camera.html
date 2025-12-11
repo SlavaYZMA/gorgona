@@ -61,7 +61,7 @@
             position: absolute;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translate(-50%, -50%) scaleX(-1);
             min-width: 100%;
             min-height: 100%;
             object-fit: cover;
@@ -499,31 +499,40 @@
                 // Create canvas stream
                 const canvasStream = hiddenCanvas.captureStream(20);
 
-                // Draw video to canvas with correct cropping
+                // Draw video to canvas with correct cropping matching object-fit: cover + mirror
                 function drawFrame() {
                     if (!isRecording) return;
 
                     const videoWidth = videoElement.videoWidth;
                     const videoHeight = videoElement.videoHeight;
 
-                    // Calculate crop area to get eyes region
-                    const aspectRatio = FRAME_WIDTH / FRAME_HEIGHT;
-                    let sourceWidth = videoWidth;
-                    let sourceHeight = videoWidth / aspectRatio;
+                    // Calculate scale factor for object-fit: cover
+                    const scale = Math.max(FRAME_WIDTH / videoWidth, FRAME_HEIGHT / videoHeight);
 
-                    if (sourceHeight > videoHeight) {
-                        sourceHeight = videoHeight;
-                        sourceWidth = videoHeight * aspectRatio;
-                    }
+                    // Scaled dimensions
+                    const scaledWidth = videoWidth * scale;
+                    const scaledHeight = videoHeight * scale;
 
-                    const sourceX = (videoWidth - sourceWidth) / 2;
-                    const sourceY = (videoHeight - sourceHeight) / 2;
+                    // Offset (centering)
+                    const offsetX = (FRAME_WIDTH - scaledWidth) / 2;
+                    const offsetY = (FRAME_HEIGHT - scaledHeight) / 2;
 
+                    // Convert to source video coordinates
+                    const sourceX = -offsetX / scale;
+                    const sourceY = -offsetY / scale;
+                    const sourceWidth = FRAME_WIDTH / scale;
+                    const sourceHeight = FRAME_HEIGHT / scale;
+
+                    // Apply mirror transformation and draw
+                    ctx.save();
+                    ctx.scale(-1, 1);
+                    ctx.translate(-FRAME_WIDTH, 0);
                     ctx.drawImage(
                         videoElement,
                         sourceX, sourceY, sourceWidth, sourceHeight,
                         0, 0, FRAME_WIDTH, FRAME_HEIGHT
                     );
+                    ctx.restore();
 
                     requestAnimationFrame(drawFrame);
                 }
