@@ -43,12 +43,17 @@
             border: 2px dashed rgba(255, 255, 255, 0.6);
             border-radius: 50%;
             box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.1);
+            transition: border-color 0.3s, box-shadow 0.3s;
         }
         .eye-guide.left {
             left: 28px;
         }
         .eye-guide.right {
             right: 28px;
+        }
+        .eye-guide.aligned {
+            border-color: rgba(0, 255, 100, 0.8);
+            box-shadow: inset 0 0 20px rgba(0, 255, 100, 0.2), 0 0 15px rgba(0, 255, 100, 0.3);
         }
         .eye-guide-pupil {
             position: absolute;
@@ -59,6 +64,10 @@
             height: 40px;
             border: 2px dashed rgba(255, 255, 255, 0.4);
             border-radius: 50%;
+            transition: border-color 0.3s;
+        }
+        .eye-guide.aligned .eye-guide-pupil {
+            border-color: rgba(0, 255, 100, 0.6);
         }
         .eye-guide-center {
             position: absolute;
@@ -69,6 +78,10 @@
             background: rgba(255, 255, 255, 0.5);
             border-radius: 50%;
             transform: translate(-50%, -50%);
+            transition: background 0.3s;
+        }
+        .eye-guide.aligned .eye-guide-center {
+            background: rgba(0, 255, 100, 0.8);
         }
         
         .timer { color:#fff; font-size:120px; font-weight:300; margin-top:40px; font-variant-numeric:tabular-nums; letter-spacing:-5px; }
@@ -94,18 +107,18 @@
         
         <!-- Eye positioning guide overlay -->
         <div class="eye-guide-overlay" id="eyeGuideOverlay">
-            <div class="eye-guide left">
+            <div class="eye-guide left" id="leftGuide">
                 <div class="eye-guide-pupil"></div>
                 <div class="eye-guide-center"></div>
             </div>
-            <div class="eye-guide right">
+            <div class="eye-guide right" id="rightGuide">
                 <div class="eye-guide-pupil"></div>
                 <div class="eye-guide-center"></div>
             </div>
         </div>
     </div>
 
-    <div class="timer" id="timer">3</div>
+    <div class="timer" id="timer">5</div>
     <div class="status-text" id="statusText">Ожидание обнаружения глаз...</div>
 
     <div class="buttons-container" id="buttonsContainer">
@@ -129,8 +142,9 @@
     var retryBtn = document.getElementById('retryBtn');
     var saveBtn = document.getElementById('saveBtn');
     var downloadBtn = document.getElementById('downloadBtn');
-    var hiddenCanvas = document.getElementById('hiddenCanvas');
     var eyeGuideOverlay = document.getElementById('eyeGuideOverlay');
+    var leftGuide = document.getElementById('leftGuide');
+    var rightGuide = document.getElementById('rightGuide');
 
     // State
     var mediaStream = null;
@@ -142,7 +156,7 @@
 
     var isRecording = false;
     var abortedRecording = false;
-    var timerValue = 3;
+    var timerValue = 5;
     var timerInterval = null;
     var preRecordRequiredTime = 300;
 
@@ -152,6 +166,13 @@
     var headJerkThreshold = 50;
     var eyeClosedThreshold = 0.02;
     var requiredStableTime = 500;
+    
+    // Eye guide target zones (relative to frame, matching CSS positions)
+    // Left eye: centered at ~25% from left, Right eye: centered at ~75% from left
+    var leftEyeTargetX = 0.27;
+    var rightEyeTargetX = 0.73;
+    var eyeTargetY = 0.5;
+    var eyePositionTolerance = 0.12; // How close eyes must be to targets
 
     var blinkStartTime = 0;
     var isBlinking = false;
@@ -257,6 +278,20 @@
         var eyesCenterY = (leftEyeCenter.y + rightEyeCenter.y) / 2;
         var eyesCenterX = (leftEyeCenter.x + rightEyeCenter.x) / 2;
 
+        // Check if eyes are positioned correctly relative to guide
+        // Note: video is mirrored, so left eye in video appears on right side
+        var leftEyeInGuide = Math.abs(leftEyeCenter.x - rightEyeTargetX) < eyePositionTolerance && 
+                            Math.abs(leftEyeCenter.y - eyeTargetY) < eyePositionTolerance * 2;
+        var rightEyeInGuide = Math.abs(rightEyeCenter.x - leftEyeTargetX) < eyePositionTolerance && 
+                             Math.abs(rightEyeCenter.y - eyeTargetY) < eyePositionTolerance * 2;
+        var eyesInGuidePosition = leftEyeInGuide && rightEyeInGuide;
+        
+        // Update visual feedback on guides (left/right swapped due to mirror)
+        if(leftEyeInGuide) rightGuide.classList.add('aligned');
+        else rightGuide.classList.remove('aligned');
+        if(rightEyeInGuide) leftGuide.classList.add('aligned');
+        else leftGuide.classList.remove('aligned');
+
         var inFrameY = eyesCenterY > 0.35 && eyesCenterY < 0.65;
         var inFrameX = eyesCenterX > 0.25 && eyesCenterX < 0.75;
 
@@ -289,11 +324,14 @@
         lastHeadPosition = currentHeadPos;
 
         if(!isRecording){
-            if(inFrameY && inFrameX && !eyesClosed){
-                if(!eyesInFrame){ eyesInFrame = true; eyesStableStartTime = Date.now(); statusText.textContent = 'Глаза обнаружены. Держите взгляд...'; }
+            if(inFrameY && inFrameX && eyesInGuidePosition && !eyesClosed){
+                if(!eyesInFrame){ eyesInFrame = true; eyesStableStartTime = Date.now(); statusText.textContent = 'Глаза в позиции. Держите взгляд...'; }
                 if(Date.now() - eyesStableStartTime > requiredStableTime && !timerInterval) startTimerCountdown();
             } else {
-                if(eyesInFrame && !isBlinking) resetTimer('Глаза вышли из рамки');
+                if(eyesInFrame && !isBlinking) {
+                    if(!eyesInGuidePosition) resetTimer('Выровняйте глаза по направляющим');
+                    else resetTimer('Глаза вышли из рамки');
+                }
                 eyesInFrame = false;
             }
         } else {
@@ -325,7 +363,7 @@
     function startTimerCountdown(){
         if(timerInterval) return;
         statusText.textContent = 'Запись начнётся через...';
-        timerValue = 3;
+        timerValue = 5;
         timerDisplay.textContent = String(timerValue);
         timerInterval = setInterval(function(){
             timerValue--;
@@ -335,7 +373,7 @@
                 if(eyesInFrame && !isBlinking){
                     startRecording();
                 } else {
-                    timerDisplay.textContent = String(3);
+                    timerDisplay.textContent = String(5);
                     statusText.textContent = 'Положение нестабильно, повторите';
                 }
             }
@@ -344,7 +382,7 @@
 
     function resetTimer(reason){
         if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
-        timerValue = 3; timerDisplay.textContent = String(timerValue); eyesInFrame = false; eyesStableStartTime = 0;
+        timerValue = 5; timerDisplay.textContent = String(timerValue); eyesInFrame = false; eyesStableStartTime = 0;
         statusText.textContent = reason || 'Таймер сброшен';
     }
 
