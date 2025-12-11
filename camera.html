@@ -237,7 +237,7 @@
     function startTimerCountdown(){
         if(timerInterval) return;
         statusText.textContent = 'Запись начнётся через...';
-        timerValue = 7; timerDisplay.textContent = timerValue;
+        timerValue = 3; timerDisplay.textContent = timerValue;
         timerInterval = setInterval(function(){
             timerValue--; timerDisplay.textContent = timerValue;
             if(timerValue <= 0){ clearInterval(timerInterval); timerInterval = null; startRecording(); }
@@ -246,7 +246,7 @@
 
     function resetTimer(reason){
         if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
-        timerValue = 7; timerDisplay.textContent = timerValue; eyesInFrame = false; eyesStableStartTime = 0;
+        timerValue = 3; timerDisplay.textContent = timerValue; eyesInFrame = false; eyesStableStartTime = 0;
         statusText.textContent = reason || 'Таймер сброшен';
     }
 
