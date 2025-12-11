@@ -7,18 +7,18 @@
   <style>
     body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif;color:#fff}
     #video{position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-    #overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.97);pointer-events:none}
+    #overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.97);pointer-events:none;z-index:1}
     #frame{
       position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
       width:512px;height:128px;border:6px solid #fff;border-radius:18px;
       overflow:hidden;box-shadow:0 0 80px 30px rgba(255,255,255,0.7);
-      pointer-events:none
+      pointer-events:none;z-index:2
     }
-    #timer{position:fixed;top:120px;width:100%;text-align:center;font-size:80px;font-weight:bold;color:#0f0;opacity:0}
-    #info{position:fixed;bottom:140px;width:100%;text-align:center;font-size:26px}
+    #timer{position:fixed;top:120px;width:100%;text-align:center;font-size:80px;font-weight:bold;color:#0f0;opacity:0;z-index:3}
+    #info{position:fixed;bottom:140px;width:100%;text-align:center;font-size:26px;z-index:3}
     button{
       position:fixed;bottom:30px;width:calc(50%-20px);padding:20px;
-      font-size:22px;border:none;border-radius:14px;cursor:pointer;display:none
+      font-size:22px;border:none;border-radius:14px;cursor:pointer;display:none;z-index:10
     }
     #retry{left:10px;background:#c00;color:#fff}
     #send{right:10px;background:#0a0;color:#fff}
@@ -52,16 +52,18 @@
         audio: false
       });
       video.srcObject = stream;
-      video.play();
 
-      // Через 2 секунды после разрешения камеры — начинаем отсчёт
+      // Ждём 2 секунды и начинаем отсчёт
       setTimeout(() => {
         timer.style.opacity = 1;
         let n = 3;
         const iv = setInterval(() => {
           n--;
           timer.textContent = n || "Запись!";
-          if (n < 0) && clearInterval(iv) && record();
+          if (n < 0) {
+            clearInterval(iv);
+            record();
+          }
         }, 1000);
       }, 2000);
 
@@ -72,7 +74,6 @@
 
   function record() {
     chunks = [];
-    // Записываем ТОЛЬКО то, что видно внутри рамки 512×128
     const canvas = document.createElement('canvas');
     canvas.width  = 512;
     canvas.height = 128;
@@ -87,17 +88,21 @@
       const url = URL.createObjectURL(blob);
 
       const prev = document.createElement('video');
-      prev.src = url; prev.controls = true; prev.loop = true;
-      prev.style = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:512px;height:128px;border:6px solid #fff;border-radius:18px;z-index:999';
+      prev.src = url;
+      prev.controls = true;
+      prev.loop = true;
+      prev.style = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:512px;height:128px;border:6px solid #fff;border-radius:18px;z-index:999;background:#000';
       document.body.appendChild(prev);
 
       info.textContent = "Готово — только глаза";
-      retry.style.display = send.style.display = 'block';
+      retry.style.display = "block";
+      send.style.display  = "block";
+
       retry.onclick = () => location.reload();
-      send.onclick  = () => alert("Видео глаз готово!\nСкоро добавим загрузку в Filebase");
+      send.onclick  = () => alert("Видео только глаз записано и готово к загрузке в Горгону!");
     };
 
-    // Каждые 50 мс копируем видимую часть видео в canvas
+    // Каждые 30 мс копируем видимое в рамке
     const draw = () => {
       const rect = document.getElementById('frame').getBoundingClientRect();
       ctx.drawImage(
