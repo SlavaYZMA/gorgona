@@ -5,20 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>Горгона — запись глаз</title>
   <style>
-    body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif;color:#fff}
-    #video{position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-    #overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.97);pointer-events:none;z-index:1}
+    body,html{margin:0;padding:0;height:100%;background:#000;overflow:hidden;color:#fff;font-family:system-ui,sans-serif}
+    
+    /* Камера на весь экран */
+    #video{
+      position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;
+      transform:scaleX(-1); /* зеркало */
+    }
+    
+    /* Чёрная маска с вырезом под рамку */
+    #mask{
+      position:fixed;top:0;left:0;width:100%;height:100%;background:#000;
+      mask-image: radial-gradient(ellipse 256px 64px at center, transparent  transparent 64px, black 65px);
+      -webkit-mask-image: radial-gradient(ellipse 256px 64px at center, transparent 64px, black 65px);
+      pointer-events:none;
+    }
+    
+    /* Белая рамка — только для красоты */
     #frame{
       position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
       width:512px;height:128px;border:6px solid #fff;border-radius:18px;
-      overflow:hidden;box-shadow:0 0 80px 30px rgba(255,255,255,0.7);
-      pointer-events:none;z-index:2
+      box-shadow:0 0 80px 30px rgba(255,255,255,0.6);
+      pointer-events:none;z-index:10;
     }
-    #timer{position:fixed;top:120px;width:100%;text-align:center;font-size:80px;font-weight:bold;color:#0f0;opacity:0;z-index:3}
-    #info{position:fixed;bottom:140px;width:100%;text-align:center;font-size:26px;z-index:3}
+    
+    #timer{position:fixed;top:120px;width:100%;text-align:center;font-size:80px;font-weight:bold;color:#0f0;opacity:0;z-index:20}
+    #info{position:fixed;bottom:140px;width:100%;text-align:center;font-size:26px;z-index:20}
+    
     button{
       position:fixed;bottom:30px;width:calc(50%-20px);padding:20px;
-      font-size:22px;border:none;border-radius:14px;cursor:pointer;display:none;z-index:10
+      font-size:22px;border:none;border-radius:14px;cursor:pointer;display:none;z-index:30
     }
     #retry{left:10px;background:#c00;color:#fff}
     #send{right:10px;background:#0a0;color:#fff}
@@ -27,11 +43,11 @@
 <body>
 
 <video id="video" autoplay playsinline muted></video>
-<div id="overlay"></div>
+<div id="mask"></div>
 <div id="frame"></div>
 
 <div id="timer">3</div>
-<div id="info">Разреши камеру → пальцами увеличь глаза до рамки<br>Держи неподвижно 3 секунды</div>
+<div id="info">Разреши камеру<br>Пальцами увеличь глаза до рамки</div>
 
 <button id="retry">Перезаписать</button>
 <button id="send">Отправить в Горгону</button>
@@ -45,7 +61,7 @@
 
   let recorder, chunks = [];
 
-  async function go() {
+  async function start() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" },
@@ -53,7 +69,6 @@
       });
       video.srcObject = stream;
 
-      // Ждём 2 секунды и начинаем отсчёт
       setTimeout(() => {
         timer.style.opacity = 1;
         let n = 3;
@@ -62,17 +77,16 @@
           timer.textContent = n || "Запись!";
           if (n < 0) {
             clearInterval(iv);
-            record();
+            recordEyes();
           }
         }, 1000);
       }, 2000);
-
     } catch(e) {
       info.innerHTML = "Камера не включена<br>Обнови страницу и разреши доступ";
     }
   }
 
-  function record() {
+  function recordEyes() {
     chunks = [];
     const canvas = document.createElement('canvas');
     canvas.width  = 512;
@@ -80,7 +94,7 @@
     const ctx = canvas.getContext('2d');
 
     const stream = canvas.captureStream(30);
-    recorder = new MediaRecorder(stream, {mimeType:'video/webm;codecs=vp9'});
+    recorder = new MediaRecorder(stream);
 
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = () => {
@@ -95,21 +109,14 @@
       document.body.appendChild(prev);
 
       info.textContent = "Готово — только глаза";
-      retry.style.display = "block";
-      send.style.display  = "block";
-
+      retry.style.display = send.style.display = 'block';
       retry.onclick = () => location.reload();
-      send.onclick  = () => alert("Видео только глаз записано и готово к загрузке в Горгону!");
+      send.onclick  = () => alert("Видео только глаз записано и готово к загрузке!");
     };
 
-    // Каждые 30 мс копируем видимое в рамке
+    // Копируем только то, что видно в рамке
     const draw = () => {
-      const rect = document.getElementById('frame').getBoundingClientRect();
-      ctx.drawImage(
-        video,
-        rect.left, rect.top, rect.width, rect.height,
-        0, 0, 512, 128
-      );
+      ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
       if (recorder.state === "recording") requestAnimationFrame(draw);
     };
     draw();
@@ -118,7 +125,7 @@
     setTimeout(() => recorder.stop(), 5000);
   }
 
-  go();
+  start();
 </script>
 </body>
 </html>
