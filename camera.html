@@ -51,36 +51,31 @@
       video.play();
       checkFrame();
     })
-    .catch(err => statusEl.textContent = "Камера не доступна");
+    .catch(err => {
+      statusEl.textContent = "Ошибка камеры. Разреширь разрешения.";
+      console.error(err);
+    });
 
-  // Простая проверка — попали ли глаза в рамку
+  // Проверка, что в рамке достаточно тёмных пикселей (это глаза)
   function checkFrame() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
+    if (!recording && video.readyState === 4) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
 
-    ctx.drawImage(video, 
-      (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, // откуда берём
-      0, 0, 512, 128 // куда кладём
-    );
+      const imageData = ctx.getImageData(0,0,512,128).data;
+      let dark = 0;
+      for (let i = 0; i < imageData.length; i += 12) { // шаг 12 — быстрее
+        const brightness = (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
+        if (brightness < 100) dark++;
+      }
+      const eyesDetected = dark > 4000; // ≈12–15 % тёмных пикселей
 
-    const imageData = ctx.getImageData(0,0,512,128).data;
-    let darkPixels = 0;
-    for (let i = 0; i < imageData.length; i += 4) {
-      const brightness = (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
-      if (brightness < 100) darkPixels++;
+      if (eyesDetected && !recording) startRecording();
+      else if (!eyesDetected && recording) stopRecording();
     }
-
-    // Если в рамке достаточно тёмных пикселей больше 12 % — считаем, что это глаза (зрачки + ресницы)
-    const eyesDetected = darkPixels > (512*128*0.12);
-
-    if (eyesDetected && !recording) {
-      startRecording();
-    } else if (!eyesDetected && recording) {
-      stopRecording();
-    }
-
     requestAnimationFrame(checkFrame);
   }
 
@@ -90,7 +85,7 @@
     seconds = 5;
     timerEl.style.opacity = 1;
     timerEl.textContent = "05";
-    statusEl.textContent = "Держи неподвижно...";
+    statusEl.textContent = "Держи неподвижно 5 секунд...";
 
     interval = setInterval(() => {
       seconds--;
@@ -100,7 +95,6 @@
   }
 
   function stopRecording() {
-    if (recording) {
     recording = false;
     clearInterval(interval);
     timerEl.style.opacity = 0;
@@ -127,7 +121,7 @@
       preview.style.display = 'block';
       retake.style.display = 'block';
       confirm.style.display = 'block';
-      video.style.opacity = 0.3;
+      video.style.opacity = 0.2;
       frame.style.display = 'none';
     }, 'image/jpeg', 0.92);
   }
@@ -143,11 +137,10 @@
   };
 
   confirm.onclick = () => {
-    alert("Глаза успешно сохранены локально! Скоро добавим отправку в Filebase.");
+    alert("Глаза сохранены локально! Скоро подключим загрузку в Filebase.");
     history.back();
   };
 
-  // На случай закрытия страницы — останавливаем камеру
   window.onunload = () => stream && stream.getTracks().forEach(t => t.stop());
 </script>
 </body>
