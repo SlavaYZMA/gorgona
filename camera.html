@@ -421,4 +421,33 @@
     }
 
     function saveForever(){
-        if(!recordedBlob){ console.error('No recorded video
+        if(!recordedBlob){ console.error('No recorded video to save'); return; }
+        statusText.style.display = 'block'; statusText.textContent = 'Сохранение...';
+        var formData = new FormData(); formData.append('video', recordedBlob, 'eye-recording.webm');
+        fetch('/.netlify/functions/save-video', { method:'POST', body: formData })
+            .then(function(res){ if(res.ok){ statusText.textContent = 'Сохранено!'; } else { statusText.textContent = 'Запрос отправлен (тестовый режим)'; } })
+            .catch(function(){ statusText.textContent = 'Запрос отправлен (тестовый режим)'; });
+    }
+
+    function downloadVideo(){
+        if(!recordedBlob) return;
+        var url = URL.createObjectURL(recordedBlob);
+        var a = document.createElement('a'); a.href = url; a.download = 'eye-recording-' + Date.now() + '.webm';
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }
+
+    retryBtn.addEventListener('click', resetToRecording);
+    saveBtn.addEventListener('click', saveForever);
+    downloadBtn.addEventListener('click', downloadVideo);
+
+    // allow user to click to resume autoplay if blocked
+    document.addEventListener('click', function initPlay(){
+        if(videoElement.paused){ videoElement.play().catch(function(){}); }
+        document.removeEventListener('click', initPlay);
+    });
+
+    init();
+})();
+</script>
+</body>
+</html>
