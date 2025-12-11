@@ -473,30 +473,30 @@
             function calculateVisibleRegion() {
                 var videoWidth = videoElement.videoWidth;
                 var videoHeight = videoElement.videoHeight;
-
-                var frameRect = frameContainer.getBoundingClientRect();
-                var containerWidth = frameRect.width;
-                var containerHeight = frameRect.height;
-
-                var scale = Math.max(containerWidth / videoWidth, containerHeight / videoHeight);
-
-                var scaledWidth = videoWidth * scale;
-                var scaledHeight = videoHeight * scale;
-
-                var offsetX = (containerWidth - scaledWidth) / 2;
-                var offsetY = (containerHeight - scaledHeight) / 2;
-
-                var sourceX = Math.max(0, -offsetX / scale);
-                var sourceY = Math.max(0, -offsetY / scale);
-                var sourceWidth = Math.min(videoWidth - sourceX, containerWidth / scale);
-                var sourceHeight = Math.min(videoHeight - sourceY, containerHeight / scale);
-
-                return {
-                    sx: sourceX,
-                    sy: sourceY,
-                    sw: sourceWidth,
-                    sh: sourceHeight
-                };
+                
+                // Соотношение сторон рамки (512:128 = 4:1) и видео
+                var frameAspect = FRAME_WIDTH / FRAME_HEIGHT;
+                var videoAspect = videoWidth / videoHeight;
+                
+                var sx, sy, sw, sh;
+                
+                if (videoAspect > frameAspect) {
+                    // Видео шире рамки — обрезаем бока
+                    sh = videoHeight;
+                    sw = videoHeight * frameAspect;
+                    sx = (videoWidth - sw) / 2;
+                    sy = 0;
+                } else {
+                    // Видео выше/квадратнее рамки — обрезаем верх и низ
+                    sw = videoWidth;
+                    sh = videoWidth / frameAspect;
+                    sx = 0;
+                    sy = (videoHeight - sh) / 2;
+                }
+                
+                console.log('Video:', videoWidth + 'x' + videoHeight, 'Crop:', sx, sy, sw, sh);
+                
+                return { sx: sx, sy: sy, sw: sw, sh: sh };
             }
 
             function startRecording() {
