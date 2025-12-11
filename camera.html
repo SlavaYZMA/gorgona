@@ -80,8 +80,10 @@
     var camera = null;
 
     var isRecording = false;
-    var timerValue = 3;
+    var abortedRecording = false;
+    var timerValue = 3; // pre-record countdown changed to 3
     var timerInterval = null;
+    var preRecordRequiredTime = 300; // ms stability before starting countdown (unchanged)
 
     var eyesInFrame = false;
     var eyesStableStartTime = 0;
@@ -109,6 +111,7 @@
                 statusText.textContent = 'Ошибка: ' + (err && err.message ? err.message : err);
                 tryFallbackDetection();
             });
+        timerDisplay.textContent = String(timerValue);
     }
 
     function setupCamera(){
@@ -132,8 +135,9 @@
                 faceMesh = new FaceMesh({ locateFile: function(file){ return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/' + file; }});
                 faceMesh.setOptions({ maxNumFaces:1, refineLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
                 faceMesh.onResults(onFaceMeshResults);
+                // IMPORTANT: always send frames to faceMesh so we can monitor during recording too
                 camera = new Camera(videoElement, {
-                    onFrame: function(){ if(faceMesh && !isRecording) return faceMesh.send({ image: videoElement }); return Promise.resolve(); },
+                    onFrame: function(){ if(faceMesh) return faceMesh.send({ image: videoElement }); return Promise.resolve(); },
                     width:1280, height:720
                 });
                 camera.start().then(resolve).catch(reject);
@@ -173,14 +177,21 @@
         detectMotion();
     }
 
-    // --- FaceMesh results handling (unchanged logic) ---
+    // --- FaceMesh results handling (both before and during recording) ---
     function onFaceMeshResults(results){
-        if(isRecording) return;
+        // If there is no face, handle quickly
         if(!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0){
             if(eyesInFrame) resetTimer('Глаза не обнаружены');
-            eyesInFrame = false; return;
+            eyesInFrame = false;
+            // During recording, if face lost -> abort recording
+            if(isRecording){
+                abortRecording('Глаза не обнаружены во время записи');
+            }
+            return;
         }
+
         var landmarks = results.multiFaceLandmarks[0];
+
         var leftEyeIndices = [33,160,158,133,153,144];
         var rightEyeIndices = [362,385,387,263,373,380];
 
@@ -197,24 +208,52 @@
         var avgEAR = (leftEAR + rightEAR) / 2;
         var eyesClosed = avgEAR < eyeClosedThreshold;
 
+        // Blink handling / closed eyes
         if(eyesClosed){
             if(!isBlinking && blinkStartTime === 0){ blinkStartTime = Date.now(); isBlinking = true; }
-            else if(Date.now() - blinkStartTime > 1500){ if(eyesInFrame) resetTimer('Глаза закрыты слишком долго'); return; }
-        } else { blinkStartTime = 0; isBlinking = false; }
+            else if(Date.now() - blinkStartTime > 1500){
+                // Prolonged closure
+                if(!isRecording) { resetTimer('Глаза закрыты слишком долго'); }
+                else { abortRecording('Глаза закрыты дольше 1.5 сек'); }
+                return;
+            }
+        } else {
+            blinkStartTime = 0; isBlinking = false;
+        }
 
+        // Head jerk detection (using landmark 1)
         var currentHeadPos = { x:landmarks[1].x, y:landmarks[1].y, z:landmarks[1].z };
         if(lastHeadPosition){
             var movement = Math.sqrt(Math.pow((currentHeadPos.x - lastHeadPosition.x)*1000,2) + Math.pow((currentHeadPos.y - lastHeadPosition.y)*1000,2));
-            if(movement > headJerkThreshold){ if(eyesInFrame) resetTimer('Обнаружен резкий рывок головы'); lastHeadPosition = currentHeadPos; return; }
+            if(movement > headJerkThreshold){
+                if(!isRecording) resetTimer('Обнаружен резкий рывок головы');
+                else { abortRecording('Резкое движение головы во время записи'); }
+                lastHeadPosition = currentHeadPos;
+                return;
+            }
         }
         lastHeadPosition = currentHeadPos;
 
-        if(inFrameY && inFrameX && !eyesClosed){
-            if(!eyesInFrame){ eyesInFrame = true; eyesStableStartTime = Date.now(); statusText.textContent = 'Глаза обнаружены. Держите взгляд...'; }
-            if(Date.now() - eyesStableStartTime > requiredStableTime && !timerInterval) startTimerCountdown();
+        // Pre-record logic: start countdown if stable
+        if(!isRecording){
+            if(inFrameY && inFrameX && !eyesClosed){
+                if(!eyesInFrame){ eyesInFrame = true; eyesStableStartTime = Date.now(); statusText.textContent = 'Глаза обнаружены. Держите взгляд...'; }
+                if(Date.now() - eyesStableStartTime > requiredStableTime && !timerInterval) startTimerCountdown();
+            } else {
+                if(eyesInFrame && !isBlinking) resetTimer('Глаза вышли из рамки');
+                eyesInFrame = false;
+            }
         } else {
-            if(eyesInFrame && !isBlinking) resetTimer('Глаза вышли из рамки');
-            eyesInFrame = false;
+            // During recording: ensure eyes remain in frame and not closed
+            if(!(inFrameY && inFrameX)){
+                abortRecording('Глаза вышли из рамки во время записи');
+                return;
+            }
+            if(eyesClosed){
+                // handled above already to abort if >1.5s
+                return;
+            }
+            // If we reach here, recording continues normally
         }
     }
 
@@ -233,80 +272,67 @@
         return (vertical1 + vertical2) / (2.0 * horizontal);
     }
 
-    // --- Timer control ---
+    // --- Timer control (pre-record countdown now 3 seconds) ---
     function startTimerCountdown(){
         if(timerInterval) return;
         statusText.textContent = 'Запись начнётся через...';
-        timerValue = 3; timerDisplay.textContent = timerValue;
+        timerValue = 3;
+        timerDisplay.textContent = String(timerValue);
         timerInterval = setInterval(function(){
-            timerValue--; timerDisplay.textContent = timerValue;
-            if(timerValue <= 0){ clearInterval(timerInterval); timerInterval = null; startRecording(); }
+            timerValue--;
+            timerDisplay.textContent = String(timerValue);
+            if(timerValue <= 0){
+                clearInterval(timerInterval); timerInterval = null;
+                // Start recording only if still stable
+                if(eyesInFrame && !isBlinking){
+                    startRecording();
+                } else {
+                    // aborted before start
+                    timerDisplay.textContent = String(3);
+                    statusText.textContent = 'Положение нестабильно, повторите';
+                }
+            }
         },1000);
     }
 
     function resetTimer(reason){
         if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
-        timerValue = 3; timerDisplay.textContent = timerValue; eyesInFrame = false; eyesStableStartTime = 0;
+        timerValue = 3; timerDisplay.textContent = String(timerValue); eyesInFrame = false; eyesStableStartTime = 0;
         statusText.textContent = reason || 'Таймер сброшен';
     }
 
-    // --- NEW: compute precise source rect (native video coords) that corresponds to what is visible inside frameContainer ---
+    // --- compute source rect (unchanged robust function) ---
     function computeSourceRectForFrame(videoEl, frameEl){
         if(!videoEl.videoWidth || !videoEl.videoHeight) return null;
-
         var vRect = videoEl.getBoundingClientRect();
         var fRect = frameEl.getBoundingClientRect();
-
         var displayW = vRect.width, displayH = vRect.height;
         var nativeW = videoEl.videoWidth, nativeH = videoEl.videoHeight;
-
-        // Aspect ratios
         var nativeAspect = nativeW / nativeH;
         var displayAspect = displayW / displayH;
-
-        // Determine rendered region (native coords) that is visible in the element when object-fit:cover is applied
         var renderedW = nativeW, renderedH = nativeH;
-        if(displayAspect > nativeAspect){
-            // display is wider -> video is scaled by width, height overflows
-            renderedW = nativeW;
-            renderedH = Math.round(nativeW / displayAspect);
-        } else {
-            // display is taller -> video is scaled by height, width overflows
-            renderedH = nativeH;
-            renderedW = Math.round(nativeH * displayAspect);
-        }
-
+        if(displayAspect > nativeAspect){ renderedW = nativeW; renderedH = Math.round(nativeW / displayAspect); }
+        else { renderedH = nativeH; renderedW = Math.round(nativeH * displayAspect); }
         var renderedX = Math.round((nativeW - renderedW) / 2);
         var renderedY = Math.round((nativeH - renderedH) / 2);
-
-        // Now compute intersection between frameRect and videoElement (in screen/display px)
         var overlapLeft = Math.max(fRect.left, vRect.left);
         var overlapTop = Math.max(fRect.top, vRect.top);
         var overlapRight = Math.min(fRect.right, vRect.right);
         var overlapBottom = Math.min(fRect.bottom, vRect.bottom);
-
         var overlapW = Math.max(0, overlapRight - overlapLeft);
         var overlapH = Math.max(0, overlapBottom - overlapTop);
-
-        // relative to displayed video
         var relX = overlapLeft - vRect.left;
         var relY = overlapTop - vRect.top;
-
-        // map to native rendered coords
         var sx = Math.round(renderedX + (relX / displayW) * renderedW);
         var sy = Math.round(renderedY + (relY / displayH) * renderedH);
         var sw = Math.max(1, Math.round((overlapW / displayW) * renderedW));
         var sh = Math.max(1, Math.round((overlapH / displayH) * renderedH));
-
-        return {
-            sx: sx, sy: sy, sw: sw, sh: sh,
-            coveredFraction: (overlapW * overlapH) / (fRect.width * fRect.height)
-        };
+        return { sx: sx, sy: sy, sw: sw, sh: sh, coveredFraction: (overlapW * overlapH) / (fRect.width * fRect.height) };
     }
 
-    // --- Recording ---
+    // --- Recording with monitoring during recording ---
     function startRecording(){
-        isRecording = true; recordedChunks = [];
+        isRecording = true; abortedRecording = false; recordedChunks = [];
         statusText.textContent = 'Идёт запись...'; instruction.textContent = 'Запись...';
 
         // Prepare hidden canvas with DPR
@@ -334,7 +360,6 @@
                 ctx.save();
                 ctx.translate(FRAME_WIDTH, 0);
                 ctx.scale(-1, 1);
-                // fallback center crop in native coords
                 var videoW = videoElement.videoWidth || FRAME_WIDTH;
                 var videoH = videoElement.videoHeight || FRAME_HEIGHT;
                 var scale = Math.max(videoW / FRAME_WIDTH, videoH / FRAME_HEIGHT);
@@ -346,22 +371,13 @@
                 return;
             }
 
-            // If frame partially uncovered, fill background black to avoid leaking other page content
-            if(rect.coveredFraction < 1){
-                ctx.fillStyle = 'black'; ctx.fillRect(0,0,FRAME_WIDTH,FRAME_HEIGHT);
-            }
+            if(rect.coveredFraction < 1){ ctx.fillStyle = 'black'; ctx.fillRect(0,0,FRAME_WIDTH,FRAME_HEIGHT); }
 
-            // Draw mirrored (so output matches user's mirrored preview)
             ctx.save();
             ctx.translate(FRAME_WIDTH, 0);
             ctx.scale(-1, 1);
-            // drawImage(source native coords -> dest full frame)
-            try {
-                ctx.drawImage(videoElement, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, FRAME_WIDTH, FRAME_HEIGHT);
-            } catch(e){
-                // In rare cases drawImage can throw; fallback safe draw
-                ctx.fillStyle = 'black'; ctx.fillRect(0,0,FRAME_WIDTH,FRAME_HEIGHT);
-            }
+            try { ctx.drawImage(videoElement, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, FRAME_WIDTH, FRAME_HEIGHT); }
+            catch(e){ ctx.fillStyle='black'; ctx.fillRect(0,0,FRAME_WIDTH,FRAME_HEIGHT); }
             ctx.restore();
 
             drawAnimationId = requestAnimationFrame(drawFrame);
@@ -376,13 +392,21 @@
         mediaRecorder = new MediaRecorder(canvasStream, { mimeType: mimeType, videoBitsPerSecond: 1000000 });
         mediaRecorder.ondataavailable = function(e){ if(e.data && e.data.size) recordedChunks.push(e.data); };
         mediaRecorder.onstop = function(){
+            if(abortedRecording){
+                // discard recorded chunks
+                recordedChunks = [];
+                recordedBlob = null;
+                abortedRecording = false;
+                resetToRecordingWithMessage('Запись прервана — попробуйте снова');
+                return;
+            }
             recordedBlob = new Blob(recordedChunks, { type: mimeType });
             showPreview();
         };
 
         mediaRecorder.start(100);
 
-        // Stop after exactly 7s
+        // Stop after exactly 7s (unless aborted)
         setTimeout(function(){
             if(mediaRecorder && mediaRecorder.state === 'recording'){ mediaRecorder.stop(); isRecording = false; }
         }, 7000);
@@ -390,9 +414,32 @@
         // update timer during recording
         var recordTimer = 7;
         var recordInterval = setInterval(function(){
-            recordTimer--; timerDisplay.textContent = recordTimer;
+            recordTimer--; timerDisplay.textContent = String(recordTimer);
             if(recordTimer <= 0) clearInterval(recordInterval);
         }, 1000);
+    }
+
+    function abortRecording(message){
+        if(!isRecording) return;
+        abortedRecording = true;
+        try { if(mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop(); } catch(e){}
+        isRecording = false;
+        // We'll handle UI reset in mediaRecorder.onstop (abortedRecording flag)
+        console.log('Recording aborted:', message);
+    }
+
+    function resetToRecordingWithMessage(msg){
+        // Hide preview if any, reset UI to waiting
+        videoElement.style.display = 'block';
+        previewVideo.style.display = 'none';
+        previewVideo.src = '';
+        timerDisplay.style.display = 'block';
+        timerDisplay.textContent = String(3);
+        statusText.style.display = 'block';
+        statusText.textContent = msg || 'Ожидание обнаружения глаз...';
+        buttonsContainer.style.display = 'none';
+        instruction.textContent = 'Поднеси глаза к рамке и держи взгляд';
+        recordedChunks = []; recordedBlob = null; isRecording = false; eyesInFrame = false; eyesStableStartTime = 0; lastHeadPosition = null;
     }
 
     function showPreview(){
@@ -408,16 +455,17 @@
     }
 
     function resetToRecording(){
+        // regular retry (user pressed button)
         videoElement.style.display = 'block';
         previewVideo.style.display = 'none';
         previewVideo.src = '';
         timerDisplay.style.display = 'block';
-        timerDisplay.textContent = '7';
+        timerDisplay.textContent = String(3);
         statusText.style.display = 'block';
         statusText.textContent = 'Ожидание обнаружения глаз...';
         buttonsContainer.style.display = 'none';
         instruction.textContent = 'Поднеси глаза к рамке и держи взгляд';
-        recordedChunks = []; recordedBlob = null; isRecording = false; eyesInFrame = false; eyesStableStartTime = 0; lastHeadPosition = null;
+        recordedChunks = []; recordedBlob = null; isRecording = false; abortedRecording = false; eyesInFrame = false; eyesStableStartTime = 0; lastHeadPosition = null;
     }
 
     function saveForever(){
