@@ -2,176 +2,218 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Запись глаз - ГОРГОНА</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://unpkg.com/aws-sdk@2.1251.0/dist/aws-sdk.min.js"></script>
-  <script src="config.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Горгона — запись глаз</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7"></script>
   <style>
     body, html { margin:0; padding:0; height:100%; background:#000; color:#fff; font-family:system-ui,sans-serif; overflow:hidden; }
-    .center { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; }
-    #title { font-size:32px; margin-bottom:20px; }
-    #frame { width:512px; height:128px; border:2px solid white; border-radius:12px; position:relative; overflow:hidden; }
-    #video { width:100%; height:100%; object-fit:cover; }
-    #timer { font-size:120px; margin-top:20px; }
-    .back { position:absolute; top:20px; left:20px; color:gray; font-size:24px; cursor:pointer; }
-    #preview { width:512px; height:128px; border:2px solid white; border-radius:12px; margin-bottom:20px; }
-    button { padding:10px 20px; margin:10px; font-size:20px; cursor:pointer; border:none; border-radius:8px; }
-    #restart { background:#900; color:white; }
-    #save { background:white; color:black; }
-    #download { background:gray; color:white; }
-    #qr { margin-top:20px; font-size:16px; }
+    .back { position:fixed; top:20px; left:20px; font-size:28px; color:#888; cursor:pointer; z-index:100; }
+    .title { text-align:center; padding-top:40px; font-size:32px; margin-bottom:30px; }
+    .container { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; }
+    #frame { width:512px; height:128px; border:2px solid #fff; border-radius:12px; position:relative; }
+    #video { width:512px; height:128px; object-fit:cover; border-radius:12px; display:block; }
+    #timer { font-size:120px; margin-top:30px; color:#fff; }
+    #previewVideo { width:512px; height:128px; border:2px solid #fff; border-radius:12px; margin-top:20px; }
+    button { padding:16px 32px; margin:15px; font-size:20px; background:#fff; color:#000; border:none; border-radius:8px; cursor:pointer; }
+    button:hover { background:#ddd; }
+    .hidden { display:none; }
   </style>
 </head>
 <body>
-  <div class="back" onclick="history.back()">&larr;</div>
-  <div class="center" id="recording">
-    <div id="title">Поднеси глаза к рамке и держи взгляд</div>
+
+  <div class="back" onclick="window.location.href='index.html'">←</div>
+  <div class="title">Поднеси глаза к рамке и держи взгляд</div>
+
+  <div class="container" id="recordSection">
     <div id="frame">
-      <video id="video" autoplay playsinline></video>
+      <video id="video" autoplay playsinline muted></video>
     </div>
     <div id="timer">7</div>
   </div>
 
-  <div class="center" id="success" style="display:none;">
-    <div id="title">Твои глаза теперь смотрят на мир вечно.</div>
-    <p>Сохрани эту ссылку — только по ней ты сможешь удалить их навсегда.</p>
-    <div id="qr"></div>
-    <a id="deleteLink" href=""></a>
-  </div>
-
-  <div class="center" id="previewSection" style="display:none;">
-    <video id="preview" controls autoplay loop></video>
-    <button id="restart">ЗАПИСАТЬ ЗАНОВО</button>
-    <button id="save">ОСТАВИТЬ НАВСЕГДА</button>
-    <button id="download">СКАЧАТЬ НА КОМПЬЮТЕР</button>
+  <div class="container hidden" id="previewSection">
+    <div id="previewVideo" controls loop></div>
+    <div style="margin-top:30px;">
+      <button onclick="restart()">ЗАПИСАТЬ ЗАНОВО</button>
+      <button onclick="saveForever()">ОСТАВИТЬ НАВСЕГДА</button>
+      <button onclick="downloadVideo()">СКАЧАТЬ НА КОМПЬЮТЕР</button>
+    </div>
   </div>
 
   <script>
     const video = document.getElementById('video');
-    const timer = document.getElementById('timer');
-    const recording = document.getElementById('recording');
+    const timerEl = document.getElementById('timer');
+    const recordSection = document.getElementById('recordSection');
     const previewSection = document.getElementById('previewSection');
-    const success = document.getElementById('success');
-    const preview = document.getElementById('preview');
-    const qr = document.getElementById('qr');
-    const deleteLink = document.getElementById('deleteLink');
-    let recorder;
-    let chunks = [];
-    let stream;
-    let timeoutId;
-    let closedEyesTime = 0;
-    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`});
-    faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
-    faceMesh.onResults(onResults);
-    const camera = new Camera(video, { onFrame: async () => await faceMesh.send({image: video}), width: 512, height: 128 });
-    camera.start();
-    let seconds = 7;
+    const previewVideo = document.getElementById('previewVideo');
 
-    function onResults(results) {
-      if (results.multiFaceLandmarks.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
-        const leftEye = landmarks.slice(33, 42); // Примерные индексы для левого глаза
-        const rightEye = landmarks.slice(362, 386); // Для правого
-        const leftClosed = isEyeClosed(leftEye);
-        const rightClosed = isEyeClosed(rightEye);
-        if (leftClosed && rightClosed) closedEyesTime += 0.1; // Примерно 100 мс на фрейм
-        else closedEyesTime = 0;
-        if (closedEyesTime > 1.5 || !isEyesInFrame(landmarks) || isStrongMovement(landmarks)) {
-          resetTimer();
-          return;
-        }
-        if (seconds > 0) {
-          timer.textContent = seconds;
-          timeoutId = setTimeout(() => {
-            seconds--;
-            onResults(results); // Рекурсия для таймера
-          }, 1000);
-        } else {
-          stopRecording();
-        }
-      } else {
-        resetTimer();
+    let stream = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let timer = 7;
+    let timerInterval = null;
+    let detectionInterval = null;
+    let model = null;
+    let isRecording = false;
+    let hasEyes = false;
+    let closedEyesStart = null;
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 512, height: 128, facingMode: "user" }, 
+          audio: false 
+        });
+        video.srcObject = stream;
+        video.play();
+
+        // Загружаем модель BlazeFace (лёгкая и работает везде)
+        model = await blazeface.load();
+
+        detectionInterval = setInterval(detectEyes, 100);
+      } catch (err) {
+        alert("Не удалось получить доступ к камере. Разреши доступ и обнови страницу.");
+        console.error(err);
       }
     }
 
-    function isEyeClosed(eyeLandmarks) {
-      const verticalDist = Math.abs(eyeLandmarks[1].y - eyeLandmarks[5].y); // Верх и низ глаза
-      return verticalDist < 0.02; // Порог для закрытого глаза
+    function detectEyes() {
+      if (!model || isRecording) return;
+
+      model.estimateFaces(video, false).then(predictions => {
+        if (predictions.length === 0) {
+          resetTimer();
+          return;
+        }
+
+        const landmarks = predictions[0].landmarks;
+        const leftEye = landmarks[0];   // левый глаз
+        const rightEye = landmarks[1];  // правый глаз
+
+        const eyeCenterX = (leftEye[0] + rightEye[0]) / 2;
+        const eyeCenterY = (leftEye[1] + rightEye[1]) / 2;
+        const eyeDistance = Math.abs(rightEye[0] - leftEye[0]);
+
+        // Проверяем, что глаза в центре рамки и достаточно крупные
+        const inFrame = eyeCenterX > 150 && eyeCenterX < 362 && 
+                        eyeCenterY > 30 && eyeCenterY < 98 &&
+                        eyeDistance > 80 && eyeDistance < 180;
+
+        // Примерная проверка закрытых глаз
+        const top = predictions[0].topLeft[1];
+        const bottom = predictions[0].bottomRight[1];
+        const eyeHeight = bottom - top;
+        const isClosed = eyeHeight < 50;
+
+        if (isClosed) {
+          if (!closedEyesStart) closedEyesStart = Date.now();
+          else if (Date.now() - closedEyesStart > 1500) {
+            resetTimer();
+            return;
+          }
+        } else {
+          closedEyesStart = null;
+        }
+
+        if (inFrame && !hasEyes) {
+          hasEyes = true;
+          startTimer();
+        } else if (!inFrame && hasEyes) {
+          resetTimer();
+        }
+      });
     }
 
-    function isEyesInFrame(landmarks) {
-      const leftEyeX = landmarks[33].x; // Левое глаз
-      const rightEyeX = landmarks[263].x; // Правое глаз
-      return leftEyeX > 0.1 && leftEyeX < 0.4 && rightEyeX > 0.6 && rightEyeX < 0.9; // Примерно в рамке
-    }
+    function startTimer() {
+      if (timerInterval) return;
+      timer = 7;
+      timerEl.textContent = timer;
+      timerInterval = setInterval(() => {
+        timer--;
+        timerEl.textContent = timer;
+        if (timer <= 0) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+          finishRecording();
+        }
+      }, 1000);
 
-    function isStrongMovement(landmarks) {
-      // Простая проверка: сравни с предыдущим кадром (нужно хранить prevLandmarks)
-      return false; // Для простоты, реализуй если нужно
+      // Начинаем запись
+      recordedChunks = [];
+      const options = { mimeType: 'video/webm;codecs=vp9' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = 'video/webm';
+      }
+      mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+      mediaRecorder.start();
+      isRecording = true;
     }
 
     function resetTimer() {
-      clearTimeout(timeoutId);
-      seconds = 7;
-      timer.textContent = 7;
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+      timer = 7;
+      timerEl.textContent = "7";
+      hasEyes = false;
+      if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+      }
     }
 
-    function startRecording() {
-      chunks = [];
-      recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      recorder.ondataavailable = e => chunks.push(e.data);
-      recorder.start();
-    }
+    function finishRecording() {
+      mediaRecorder.stop();
+      isRecording = false;
 
-    function stopRecording() {
-      recorder.stop();
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, {type: 'video/webm'});
-        preview.src = URL.createObjectURL(blob);
-        recording.style.display = 'none';
-        previewSection.style.display = 'block';
-        document.getElementById('restart').onclick = () => {
-          previewSection.style.display = 'none';
-          recording.style.display = 'block';
-          seconds = 7;
-        };
-        document.getElementById('save').onclick = () => saveVideo(blob);
-        document.getElementById('download').onclick = () => downloadVideo(blob);
-      };
-    }
-
-    async function saveVideo(blob) {
-      const s3 = new AWS.S3({ endpoint: 'https://s3.filebase.com', accessKeyId: FILEBASE_ACCESS_KEY, secretAccessKey: FILEBASE_SECRET_KEY, signatureVersion: 'v4' });
-      const params = { Bucket: 'gorgona', Key: Date.now() + '.webm', Body: blob, ACL: 'public-read' };
-      const upload = await s3.upload(params).promise();
-      const cid = upload.Location.split('/').pop();
-      const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      await supabase.from('eyes').insert({ cid });
-      const deleteKey = crypto.randomUUID();
-      const deleteUrl = `https://gorgonaeyes.netlify.app/delete/${deleteKey}`;
-      qr.innerHTML = `QR: (используй библиотеку для генерации QR, напр qrcode.js)`;
-      deleteLink.href = deleteUrl;
-      deleteLink.textContent = deleteUrl;
-      previewSection.style.display = 'none';
-      success.style.display = 'block';
-      // Сохрани deleteKey в Supabase или другом месте для удаления
-    }
-
-    function downloadVideo(blob) {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
+      previewVideo.src = url;
+
+      recordSection.classList.add('hidden');
+      previewSection.classList.remove('hidden');
+    }
+
+    function restart() {
+      previewSection.classList.add('hidden');
+      recordSection.classList.remove('hidden');
+      startCamera();
+    }
+
+    function downloadVideo() {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
       const a = document.createElement('a');
-      a.href = url;
-      a.download = 'eyes.webm';
+      a.href = URL.createObjectURL(blob);
+      a.download = 'gorgona-eyes.webm';
       a.click();
     }
 
-    navigator.mediaDevices.getUserMedia({ video: { width: 512, height: 128 } }).then(s => {
-      stream = s;
-      video.srcObject = s;
-      startRecording(); // Начать запись сразу, но сохранять только после 7 сек
-    }).catch(console.error);
+    function saveForever() {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const formData = new FormData();
+      formData.append('file', blob, 'eyes.webm');
+
+      // Заглушка — в будущем здесь будет Netlify Function
+      fetch('/.netlify/functions/upload', {
+        method: 'POST',
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        console.log('Успешно загружено:', data);
+        alert('Твои глаза теперь смотрят на мир вечно.');
+      })
+      .catch(err => {
+        console.error(err);
+        alert('Ошибка загрузки. Попробуй позже.');
+      });
+    }
+
+    // Запуск
+    startCamera();
   </script>
 </body>
 </html>
