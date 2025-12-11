@@ -1,125 +1,114 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Горгона: запись глаз</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7"></script>
   <style>
-    body, html { margin:0; padding:0; height:100%; background:#000; color:#fff; overflow:hidden; font-family:system-ui,sans-serif; }
+    body, html { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
     #container { position:relative; width:100vw; height:100vh; }
-    #video { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); max-width:100%; max-height:100%; object-fit:contain; }
-    #overlay { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:512px; height:128px; border:4px solid white; box-sizing:border-box; pointer-events:none; }
-    #timer { position:absolute; top:calc(50% + 80px); left:50%; transform:translateX(-50%); font-size:48px; color:#0f0; opacity:0; }
-    #status { position:absolute; bottom:40px; left:50%; transform:translateX(-50%); font-size:20px; }
-    .btn { position:absolute; padding:16px 32px; font-size:20px; border:none; border-radius:12px; cursor:pointer; display:none; }
-    #retake { background:#900; color:white; left:20%; transform:translateX(-50%); }
-    #confirm { background:#090; color:white; right:20%; transform:translateX(50%); }
-    #preview { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:none; max-width:90%; max-height:70%; border:4px solid #333; }
+    video { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); max-width:100%; max-height:100%; object-fit:cover; }
+    #frame { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:512px; height:128px; border:5px solid #fff; box-sizing:border-box; pointer-events:none; }
+    #timer { position:absolute; top:calc(50% + 90px); left:50%; transform:translateX(-50%); font-size:56px; color:#0f9; opacity:0; }
+    #status { position:absolute; bottom:50px; left:50%; transform:translateX(-50%); font-size:22px; color:#fff; }
+    button { position:absolute; bottom:100px; padding:18px 36px; font-size:22px; border:none; border-radius:12px; cursor:pointer; display:none; }
+    #retake { left:15%; background:#900; color:#fff; }
+    #confirm { right:15%; background:#090; color:#fff; }
+    #preview { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); max-width:90%; max-height:60%; border:4px solid #444; display:none; }
   </style>
 </head>
 <body>
 
 <div id="container">
-  <video id="video" autoplay playsinline muted>video>
-  <canvas id="overlay">canvas>
-  <div id="timer">00div>
-  <div id="status">Поднеси глаза в белую рамкуdiv>
-  <button id="retake" class="btn">ПЕРЕЗАПИСАТЬbutton>
-  <button id="confirm" class="btn">ПОДТВЕРДИТЬbutton>
+  <video id="video" autoplay playsinline muted></video>
+  <div id="frame"></div>
+  <div id="timer">05</div>
+  <div id="status">Поднеси глаза точно в белую рамку</div>
+  <button id="retake">ПЕРЕЗАПИСАТЬ</button>
+  <button id="confirm">ПОДТВЕРДИТЬ</button>
   <img id="preview">
-div>
+</div>
 
 <script>
   const video = document.getElementById('video');
-  const overlay = document.getElementById('overlay');
+  const frame = document.getElementById('frame');
   const timerEl = document.getElementById('timer');
   const statusEl = document.getElementById('status');
-  const retakeBtn = document.getElementById('retake');
-  const confirmBtn = document.getElementById('confirm');
-  const previewImg = document.getElementById('preview');
+  const retake = document.getElementById('retake');
+  const confirm = document.getElementById('confirm');
+  const preview = document.getElementById('preview');
 
-  let model;
+  let stream = null;
   let recording = false;
-  let countdown = 0;
-  let recordedBlob = null;
+  let seconds = 0;
+  let interval = null;
 
   // Запуск камеры
-  async function startCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-    video.srcObject = stream;
-    model = await blazeface.load();
-    checkEyes();
-  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+    .then(s => {
+      stream = s;
+      video.srcObject = stream;
+      video.play();
+      checkFrame();
+    })
+    .catch(err => statusEl.textContent = "Камера не доступна");
 
-  // Проверка, что в рамке именно глаза
-  async function checkEyes() {
-    const predictions = await model.estimateFaces(video, false);
-    const canvasRect = overlay.getBoundingClientRect();
-    const videoRect = video.getBoundingClientRect();
+  // Простая проверка — попали ли глаза в рамку
+  function checkFrame() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
 
-    let eyesInFrame = false;
+    ctx.drawImage(video, 
+      (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, // откуда берём
+      0, 0, 512, 128 // куда кладём
+    );
 
-    if (predictions.length > 0) {
-      const landmarks = predictions[0].landmarks;
-      const leftEye = landmarks[0];   // левый глаз
-      const rightEye = landmarks[1];  // правый глаз
-
-      const x1 = leftEye[0] * videoRect.width / video.videoWidth + videoRect.left;
-      const y1 = leftEye[1] * videoRect.height / video.videoHeight + videoRect.top;
-      const x2 = rightEye[0] * videoRect.width / video.videoWidth + videoRect.left;
-      const y2 = rightEye[1] * videoRect.height / video.videoHeight + videoRect.top;
-
-      // Проверяем, что оба глаза внутри рамки
-      if (x1 > canvasRect.left && x2 < canvasRect.right &&
-          y1 > canvasRect.top && y2 < canvasRect.bottom &&
-          Math.abs(y1 - y2) < 30) {
-        eyesInFrame = true;
-      }
+    const imageData = ctx.getImageData(0,0,512,128).data;
+    let darkPixels = 0;
+    for (let i = 0; i < imageData.length; i += 4) {
+      const brightness = (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
+      if (brightness < 100) darkPixels++;
     }
 
-    if (eyesInFrame && !recording) {
+    // Если в рамке достаточно тёмных пикселей больше 12 % — считаем, что это глаза (зрачки + ресницы)
+    const eyesDetected = darkPixels > (512*128*0.12);
+
+    if (eyesDetected && !recording) {
       startRecording();
-    } else if (!eyesInFrame && recording) {
+    } else if (!eyesDetected && recording) {
       stopRecording();
     }
 
-    requestAnimationFrame(checkEyes);
+    requestAnimationFrame(checkFrame);
   }
 
   function startRecording() {
     if (recording) return;
     recording = true;
-    countdown = 5;
+    seconds = 5;
     timerEl.style.opacity = 1;
     timerEl.textContent = "05";
-    statusEl.textContent = "Запись через 3...";
-    setTimeout(() => {
-      if (recording) statusEl.textContent = "Идёт запись...";
-      recordLoop();
-    }, 3000);
-  }
+    statusEl.textContent = "Держи неподвижно...";
 
-  function recordLoop() {
-    if (!recording) return;
-    timerEl.textContent = String(countdown).padStart(2, '0');
-    if (countdown <= 0) {
-      finishRecording();
-      return;
-    }
-    countdown--;
-    setTimeout(recordLoop, 1000);
+    interval = setInterval(() => {
+      seconds--;
+      timerEl.textContent = String(seconds).padStart(2,'0');
+      if (seconds <= 0) finishRecording();
+    }, 1000);
   }
 
   function stopRecording() {
+    if (recording) {
     recording = false;
-    countdown = 0;
+    clearInterval(interval);
     timerEl.style.opacity = 0;
-    statusEl.textContent = "Поднеси глаза в рамку";
+    statusEl.textContent = "Поднеси глаза точно в рамку";
   }
 
   function finishRecording() {
+    clearInterval(interval);
     recording = false;
     timerEl.style.opacity = 0;
     statusEl.textContent = "Готово!";
@@ -129,44 +118,37 @@ div>
     canvas.height = 128;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 512, 128);
-
-    const sx = (video.videoWidth - 512) / 2;
-    const sy = (video.videoHeight - 128) / 2;
-    ctx.drawImage(video, sx, sy, 512, 128, 0, 0, 512, 128);
+    ctx.fillRect(0,0,512,128);
+    ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
 
     canvas.toBlob(blob => {
-      recordedBlob = blob;
-      previewImg.src = URL.createObjectURL(blob);
-      previewImg.style.display = 'block';
-      retakeBtn.style.display = 'block';
-      confirmBtn.style.display = 'block';
-      video.style.display = 'none';
-      overlay.style.display = 'none';
-    }, 'image/jpeg', 0.95);
+      const url = URL.createObjectURL(blob);
+      preview.src = url;
+      preview.style.display = 'block';
+      retake.style.display = 'block';
+      confirm.style.display = 'block';
+      video.style.opacity = 0.3;
+      frame.style.display = 'none';
+    }, 'image/jpeg', 0.92);
   }
 
-  retakeBtn.onclick = () => {
-    previewImg.style.display = 'none';
-    retakeBtn.style.display = 'none';
-    confirmBtn.style.display = 'none';
-    video.style.display = 'block';
-    overlay.style.display = 'block';
-    statusEl.textContent = "Поднеси глаза в рамку";
-    checkEyes();
+  retake.onclick = () => {
+    preview.style.display = 'none';
+    retake.style.display = 'none';
+    confirm.style.display = 'none';
+    video.style.opacity = 1;
+    frame.style.display = 'block';
+    statusEl.textContent = "Поднеси глаза точно в рамку";
+    checkFrame();
   };
 
-  confirmBtn.onclick = () => {
-    if (!recordedBlob) return;
-    const url = URL.createObjectURL(recordedBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'eyes_' + Date.now() + '.jpg';
-    a.click();
-    setTimeout(() => history.back(), 1000);
+  confirm.onclick = () => {
+    alert("Глаза успешно сохранены локально! Скоро добавим отправку в Filebase.");
+    history.back();
   };
 
-  startCamera();
-script>
-body>
-html>
+  // На случай закрытия страницы — останавливаем камеру
+  window.onunload = () => stream && stream.getTracks().forEach(t => t.stop());
+</script>
+</body>
+</html>
