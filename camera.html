@@ -2,69 +2,63 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>Горгона — запись глаз</title>
   <style>
-    /* Убираем все отступы, делаем чёрный фон на всю страницу */
     body, html { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
-
-    /* Контейнер на весь экран */
     #container { position:relative; width:100vw; height:100vh; background:#000; }
+    
+    /* Видео — скрыто, но можно зумить пальцами */
+    #video {
+      position: absolute;
+      top: 50%; left: 50%;
+      min-width: 100%; min-height: 100%;
+      width: auto; height: auto;
+      transform: translate(-50%, -50%) scaleX(-1); /* зеркало */
+      object-fit: contain;
+      z-index: 1;
+    }
 
-    /* Скрытое видео — используется только как источник */
-    #video { position:absolute; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); display:none; }
+    /* Чёрная маска — всё, кроме рамки */
+    #mask {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.98);
+      z-index: 2;
+    }
 
-    /* Canvas — это и есть наша видимая рамка с глазами */
+    /* Рамка — это "окно" в камеру */
     #frame {
       position: absolute;
-      top: 50%;
-      left: 50%;
+      top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       width: 512px;
       height: 128px;
       border: 6px solid #fff;
       border-radius: 16px;
-      box-shadow: 0 0 60px 30px rgba(255,255,255,0.6);
-      z-index: 10;
+      overflow: hidden;
+      z-index: 3;
+      box-shadow: 0 0 80px 20px rgba(255,255,255,0.6);
     }
 
-    /* Текст-инструкция */
-    #info {
-      position: absolute;
-      bottom: 140px;
-      width: 100%;
-      text-align: center;
-      font-size: 26px;
-      color: #fff;
-      z-index: 20;
-    }
-
-    /* Таймер обратного отсчёта */
     #timer {
       position: absolute;
-      top: 100px;
-      width: 100%;
-      text-align: center;
-      font-size: 80px;
-      font-weight: bold;
-      color: #0f0;
+      top: 100px; width: 100%; text-align: center;
+      font-size: 80px; font-weight: bold; color: #0f0;
       text-shadow: 0 0 20px #000;
-      z-index: 20;
-      opacity: 0;
+      z-index: 4; opacity: 0;
     }
 
-    /* Кнопки внизу */
+    #info {
+      position: absolute;
+      bottom: 140px; width: 100%; text-align: center;
+      font-size: 26px; color: #fff; z-index: 4;
+    }
+
     button {
-      position: fixed;
-      bottom: 30px;
-      width: calc(50% - 30px);
-      padding: 20px;
-      font-size: 22px;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      z-index: 30;
-      display: none;
+      position: fixed; bottom: 30px; width: calc(50% - 30px);
+      padding: 20px; font-size: 22px; border: none; border-radius: 12px;
+      cursor: pointer; z-index: 10; display: none;
     }
     #retry { left: 15px; background:#900; color:#fff; }
     #send  { right: 15px; background:#090; color:#fff; }
@@ -74,86 +68,76 @@
 
 <div id="container">
   <video id="video" autoplay playsinline muted></video>
-  <canvas id="frame" width="512" height="128"></canvas>
-  
+  <div id="mask"></div>
+  <div id="frame"></div>
   <div id="timer">3</div>
-  <div id="info">Поднеси глаза точно в белую рамку<br>Держи неподвижно 3 секунды</div>
-  
+  <div id="info">
+    Пальцами приблизь глаза к рамке<br>
+    Держи неподвижно 3 секунды
+  </div>
   <button id="retry">Перезаписать</button>
   <button id="send">Отправить в Горгону</button>
 </div>
 
 <script>
-  // Получаем элементы
-  const video   = document.getElementById('video');    // скрытое видео — источник
-  const canvas  = document.getElementById('frame');    // видимая рамка (то, что видит пользователь)
-  const ctx     = canvas.getContext('2d');
-  const timer   = document.getElementById('timer');
-  const info    = document.getElementById('info');
+  const video  = document.getElementById('video');
+  const frame  = document.getElementById('frame');
+  const timer  = document.getElementById('timer');
+  const info   = document.getElementById('info');
   const retry  = document.getElementById('retry');
-  const send    = document.getElementById('send');
+  const send   = document.getElementById('send');
 
-  let stream = null;
-  let recorder = null;
-  let chunks = [];
+  let stream, recorder, chunks = [];
 
-  // === 1. Запускаем камеру ===
-  async function init() {
+  async function start() {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user" },
+      video: { facingMode: "user", width: {ideal: 1920}, height: {ideal: 1080} },
       audio: false
     });
     video.srcObject = stream;
     video.play();
 
-    // Ждём, пока видео загрузится
-    video.onloadedmetadata = () => {
-      drawToCanvas(); // начинаем рисовать камеру в рамку
-      startCountdown(); // через 1.5 сек запускаем отсчёт
-    };
+    // Пользователь сам зумит и двигает камеру пальцами — как в обычной камере
+    // Мы ничего не трогаем — просто ждём 3 секунды после загрузки
+    setTimeout(beginCountdown, 2000);
   }
 
-  // === 2. Рисуем камеру ТОЛЬКО внутри рамки (512×128) ===
-  function drawToCanvas() {
-    // Центрируем камеру по горизонтали и вертикали
-    const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
-    const x = (video.videoWidth - canvas.width / scale) / 2;
-    const y = (video.videoHeight - canvas.height / scale) / 2;
-
-    ctx.save();
-    ctx.scale(-1, 1); // зеркалим (как селфи)
-    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
-    ctx.restore();
-
-    requestAnimationFrame(drawToCanvas);
+  function beginCountdown() {
+    timer.style.opacity = 1;
+    let sec = 3;
+    const int = setInterval(() => {
+      sec--;
+      timer.textContent = sec > 0 ? sec : "Запись!";
+      if (sec <= -1) {
+        clearInterval(int);
+        startRecording();
+      }
+    }, 1000);
   }
 
-  // === 3. Через 1.5 сек — начинаем 3-секундный отсчёт ===
-  function startCountdown() {
-    setTimeout(() => {
-      timer.style.opacity = 1;
-      let count = 3;
-      const interval = setInterval(() => {
-        count--;
-        timer.textContent = count > 0 ? count : "Запись!";
-        if (count <= -1) {
-          clearInterval(interval);
-          startRecording();
-        }
-      }, 1000);
-    }, 1500);
-  }
-
-  // === 4. Записываем ровно 5 секунд ТОЛЬКО то, что в canvas (то есть только глаза) ===
   function startRecording() {
     chunks = [];
 
-    // Создаём поток из canvas (а не из видео!)
-    const canvasStream = canvas.captureStream(30); // 30 fps
-    recorder = new MediaRecorder(canvasStream, {
-      mimeType: 'video/webm;codecs=vp9'
-    });
+    // Создаём canvas 512×128 и рисуем туда только то, что видно в рамке
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
 
+    // Копируем видимую часть видео в canvas каждый кадр
+    function draw() {
+      const rect = frame.getBoundingClientRect();
+      const scaleX = video.videoWidth / video.offsetWidth;
+      const scaleY = video.videoHeight / video.offsetHeight;
+
+      const sx = (rect.left + window.scrollX) * scaleX;
+      const sy = (rect.top + window.scrollY) * scaleY;
+
+      ctx.drawImage(video, sx, sy, rect.width * scaleX, rect.height * scaleY, 0, 0, 512, 128);
+    }
+
+    const streamFromFrame = canvas.captureStream(30);
+    recorder = new MediaRecorder(streamFromFrame, { mimeType: 'video/webm;codecs=vp9' });
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = () => {
       const blob = new Blob(chunks, { type: 'video/webm' });
@@ -161,32 +145,30 @@
     };
 
     recorder.start();
-    setTimeout(() => recorder.stop(), 5000); // ровно 5 секунд
+    setTimeout(() => recorder.stop(), 5000);
     info.textContent = "Идёт запись…";
   }
 
-  // === 5. Показываем превью (только глаза) ===
   function showPreview(blob) {
     const url = URL.createObjectURL(blob);
     const prev = document.createElement('video');
     prev.src = url;
     prev.controls = true;
     prev.loop = true;
-    prev.style = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:512px;height:128px;border:6px solid #fff;border-radius:16px;z-index:100;background:#000';
+    prev.style = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:512px;height:128px;border:6px solid #fff;border-radius:16px;z-index:100';
     document.body.appendChild(prev);
 
-    info.textContent = "Готово. Только твои глаза.";
+    info.textContent = "Готово. Только глаза.";
     retry.style.display = 'block';
     send.style.display = 'block';
 
     retry.onclick = () => location.reload();
     send.onclick = () => {
-      alert("Видео готово к отправке в Горгону!\nСледующий шаг — загрузка в Filebase.");
+      alert("Видео только глаз записано!\nСкоро добавим загрузку в Filebase.");
     };
   }
 
-  // === Запуск ===
-  init();
+  start();
 </script>
 </body>
 </html>
