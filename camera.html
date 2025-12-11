@@ -71,8 +71,21 @@
             transform: translate(-50%, -50%);
         }
         
-        .timer { color:#fff; font-size:120px; font-weight:300; margin-top:40px; font-variant-numeric:tabular-nums; letter-spacing:-5px; }
+        .timer { color:#fff; font-size:120px; font-weight:300; margin-top:40px; font-variant-numeric:tabular-nums; letter-spacing:-5px; display:none; }
         .status-text { color:#888; font-size:16px; margin-top:20px; text-align:center; }
+        
+        /* Start recording button */
+        .start-btn-container { margin-top:40px; }
+        .start-btn {
+            background:transparent; color:#fff; border:2px solid #fff; padding:20px 60px;
+            font-size:18px; font-weight:500; cursor:pointer; border-radius:8px;
+            text-transform:uppercase; letter-spacing:1px; transition: all 0.3s ease;
+        }
+        .start-btn:hover:not(:disabled) { background:#fff; color:#000; }
+        .start-btn:disabled {
+            opacity:0.3; cursor:not-allowed; border-color:#555; color:#555;
+        }
+        
         .buttons-container { display:none; flex-direction:column; align-items:center; gap:15px; margin-top:40px; }
         .btn { background:transparent; color:#fff; border:2px solid #fff; padding:15px 40px; font-size:16px; font-weight:500; cursor:pointer; border-radius:8px; min-width:280px; text-transform:uppercase; letter-spacing:1px; }
         .btn:hover { background:#fff; color:#000; }
@@ -105,8 +118,12 @@
         </div>
     </div>
 
-    <div class="timer" id="timer">5</div>
+    <div class="timer" id="timer">3</div>
     <div class="status-text" id="statusText">Ожидание обнаружения глаз...</div>
+    
+    <div class="start-btn-container" id="startBtnContainer">
+        <button class="start-btn" id="startBtn" disabled>НАЧАТЬ ЗАПИСЬ</button>
+    </div>
 
     <div class="buttons-container" id="buttonsContainer">
         <button class="btn" id="retryBtn">ЗАПИСАТЬ ЗАНОВО</button>
@@ -131,6 +148,8 @@
     var downloadBtn = document.getElementById('downloadBtn');
     var hiddenCanvas = document.getElementById('hiddenCanvas');
     var eyeGuideOverlay = document.getElementById('eyeGuideOverlay');
+    var startBtn = document.getElementById('startBtn');
+    var startBtnContainer = document.getElementById('startBtnContainer');
 
     // State
     var mediaStream = null;
@@ -141,21 +160,17 @@
     var camera = null;
 
     var isRecording = false;
+    var isCountingDown = false;
     var abortedRecording = false;
-    var timerValue = 5;
-    var timerInterval = null;
-    var preRecordRequiredTime = 300;
+    var countdownInterval = null;
 
     var eyesInFrame = false;
-    var eyesStableStartTime = 0;
     var lastHeadPosition = null;
     var headJerkThreshold = 50;
     var eyeClosedThreshold = 0.02;
-    var requiredStableTime = 500;
 
     var blinkStartTime = 0;
     var isBlinking = false;
-    var blinkDurationThreshold = 300;
 
     var FRAME_WIDTH = 512;
     var FRAME_HEIGHT = 128;
@@ -172,7 +187,6 @@
                 statusText.textContent = 'Ошибка: ' + (err && err.message ? err.message : err);
                 tryFallbackDetection();
             });
-        timerDisplay.textContent = String(timerValue);
     }
 
     function setupCamera(){
@@ -224,10 +238,16 @@
                 if(diff < 10){
                     stableFrameCount++;
                     if(stableFrameCount >= requiredStableFrames && !eyesInFrame){
-                        eyesInFrame = true; eyesStableStartTime = Date.now(); statusText.textContent = 'Обнаружено стабильное положение'; startTimerCountdown();
+                        eyesInFrame = true;
+                        statusText.textContent = 'Обнаружено стабильное положение';
+                        updateStartButton();
                     }
                 } else {
-                    if(diff > 30 && eyesInFrame) resetTimer('Обнаружено резкое движение');
+                    if(diff > 30 && eyesInFrame) {
+                        eyesInFrame = false;
+                        updateStartButton();
+                        if(isCountingDown) abortCountdown('Обнаружено резкое движение');
+                    }
                     stableFrameCount = 0;
                 }
             }
@@ -239,8 +259,14 @@
 
     function onFaceMeshResults(results){
         if(!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0){
-            if(eyesInFrame) resetTimer('Глаза не обнаружены');
-            eyesInFrame = false;
+            if(eyesInFrame) {
+                eyesInFrame = false;
+                updateStartButton();
+                statusText.textContent = 'Глаза не обнаружены';
+            }
+            if(isCountingDown){
+                abortCountdown('Глаза не обнаружены');
+            }
             if(isRecording){
                 abortRecording('Глаза не обнаружены во время записи');
             }
@@ -268,8 +294,8 @@
         if(eyesClosed){
             if(!isBlinking && blinkStartTime === 0){ blinkStartTime = Date.now(); isBlinking = true; }
             else if(Date.now() - blinkStartTime > 1500){
-                if(!isRecording) { resetTimer('Глаза закрыты слишком долго'); }
-                else { abortRecording('Глаза закрыты дольше 1.5 сек'); }
+                if(isCountingDown) { abortCountdown('Глаза закрыты слишком долго'); }
+                else if(isRecording) { abortRecording('Глаза закрыты дольше 1.5 сек'); }
                 return;
             }
         } else {
@@ -280,28 +306,34 @@
         if(lastHeadPosition){
             var movement = Math.sqrt(Math.pow((currentHeadPos.x - lastHeadPosition.x)*1000,2) + Math.pow((currentHeadPos.y - lastHeadPosition.y)*1000,2));
             if(movement > headJerkThreshold){
-                if(!isRecording) resetTimer('Обнаружен резкий рывок головы');
-                else { abortRecording('Резкое движение головы во время записи'); }
+                if(isCountingDown) abortCountdown('Обнаружен резкий рывок головы');
+                else if(isRecording) { abortRecording('Резкое движение головы во время записи'); }
                 lastHeadPosition = currentHeadPos;
                 return;
             }
         }
         lastHeadPosition = currentHeadPos;
 
-        if(!isRecording){
-            if(inFrameY && inFrameX && !eyesClosed){
-                if(!eyesInFrame){ eyesInFrame = true; eyesStableStartTime = Date.now(); statusText.textContent = 'Глаза обнаружены. Держите взгляд...'; }
-                if(Date.now() - eyesStableStartTime > requiredStableTime && !timerInterval) startTimerCountdown();
-            } else {
-                if(eyesInFrame && !isBlinking) resetTimer('Глаза вышли из рамки');
-                eyesInFrame = false;
+        // Update eyes in frame state
+        var eyesCurrentlyInFrame = inFrameY && inFrameX && !eyesClosed;
+        
+        if(!isRecording && !isCountingDown){
+            if(eyesCurrentlyInFrame !== eyesInFrame){
+                eyesInFrame = eyesCurrentlyInFrame;
+                updateStartButton();
+                if(eyesInFrame){
+                    statusText.textContent = 'Глаза обнаружены. Нажмите кнопку для записи.';
+                } else {
+                    statusText.textContent = 'Глаза вышли из рамки';
+                }
             }
-        } else {
+        } else if(isCountingDown){
+            if(!eyesCurrentlyInFrame && !isBlinking){
+                abortCountdown('Глаза вышли из рамки');
+            }
+        } else if(isRecording){
             if(!(inFrameY && inFrameX)){
                 abortRecording('Глаза вышли из рамки во время записи');
-                return;
-            }
-            if(eyesClosed){
                 return;
             }
         }
@@ -322,30 +354,44 @@
         return (vertical1 + vertical2) / (2.0 * horizontal);
     }
 
-    function startTimerCountdown(){
-        if(timerInterval) return;
+    function updateStartButton(){
+        startBtn.disabled = !eyesInFrame;
+    }
+
+    function startCountdown(){
+        if(isCountingDown || isRecording) return;
+        isCountingDown = true;
+        startBtnContainer.style.display = 'none';
+        timerDisplay.style.display = 'block';
+        
+        var countdownValue = 3;
+        timerDisplay.textContent = String(countdownValue);
         statusText.textContent = 'Запись начнётся через...';
-        timerValue = 5;
-        timerDisplay.textContent = String(timerValue);
-        timerInterval = setInterval(function(){
-            timerValue--;
-            timerDisplay.textContent = String(timerValue);
-            if(timerValue <= 0){
-                clearInterval(timerInterval); timerInterval = null;
+        instruction.textContent = 'Держите взгляд';
+        
+        countdownInterval = setInterval(function(){
+            countdownValue--;
+            timerDisplay.textContent = String(countdownValue);
+            if(countdownValue <= 0){
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+                isCountingDown = false;
                 if(eyesInFrame && !isBlinking){
                     startRecording();
                 } else {
-                    timerDisplay.textContent = String(5);
-                    statusText.textContent = 'Положение нестабильно, повторите';
+                    resetToRecordingWithMessage('Положение нестабильно, попробуйте снова');
                 }
             }
-        },1000);
+        }, 1000);
     }
 
-    function resetTimer(reason){
-        if(timerInterval){ clearInterval(timerInterval); timerInterval = null; }
-        timerValue = 5; timerDisplay.textContent = String(timerValue); eyesInFrame = false; eyesStableStartTime = 0;
-        statusText.textContent = reason || 'Таймер сброшен';
+    function abortCountdown(reason){
+        if(countdownInterval){
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+        }
+        isCountingDown = false;
+        resetToRecordingWithMessage(reason || 'Отсчёт прерван');
     }
 
     function computeSourceRectForFrame(videoEl, frameEl){
@@ -380,8 +426,8 @@
         isRecording = true; abortedRecording = false; recordedChunks = [];
         statusText.textContent = 'Идёт запись...'; instruction.textContent = 'Запись...';
         
-        // Hide eye guide during recording
-        eyeGuideOverlay.style.display = 'none';
+        // Keep eye guide visible during recording
+        eyeGuideOverlay.style.display = 'block';
 
         var dpr = window.devicePixelRatio || 1;
         hiddenCanvas.width = FRAME_WIDTH * dpr;
@@ -452,6 +498,7 @@
         }, 7000);
 
         var recordTimer = 7;
+        timerDisplay.textContent = String(recordTimer);
         var recordInterval = setInterval(function(){
             recordTimer--; timerDisplay.textContent = String(recordTimer);
             if(recordTimer <= 0) clearInterval(recordInterval);
@@ -470,14 +517,16 @@
         videoElement.style.display = 'block';
         previewVideo.style.display = 'none';
         previewVideo.src = '';
-        timerDisplay.style.display = 'block';
-        timerDisplay.textContent = String(5);
+        timerDisplay.style.display = 'none';
         statusText.style.display = 'block';
         statusText.textContent = msg || 'Ожидание обнаружения глаз...';
         buttonsContainer.style.display = 'none';
+        startBtnContainer.style.display = 'block';
         eyeGuideOverlay.style.display = 'block';
         instruction.textContent = 'Поднеси глаза к рамке и держи взгляд';
-        recordedChunks = []; recordedBlob = null; isRecording = false; eyesInFrame = false; eyesStableStartTime = 0; lastHeadPosition = null;
+        recordedChunks = []; recordedBlob = null; isRecording = false; isCountingDown = false;
+        eyesInFrame = false; lastHeadPosition = null;
+        updateStartButton();
     }
 
     function showPreview(){
@@ -488,6 +537,7 @@
 
         timerDisplay.style.display = 'none';
         statusText.style.display = 'none';
+        startBtnContainer.style.display = 'none';
         buttonsContainer.style.display = 'flex';
         eyeGuideOverlay.style.display = 'none';
         instruction.textContent = 'Запись завершена';
@@ -497,14 +547,16 @@
         videoElement.style.display = 'block';
         previewVideo.style.display = 'none';
         previewVideo.src = '';
-        timerDisplay.style.display = 'block';
-        timerDisplay.textContent = String(5);
+        timerDisplay.style.display = 'none';
         statusText.style.display = 'block';
         statusText.textContent = 'Ожидание обнаружения глаз...';
         buttonsContainer.style.display = 'none';
+        startBtnContainer.style.display = 'block';
         eyeGuideOverlay.style.display = 'block';
         instruction.textContent = 'Поднеси глаза к рамке и держи взгляд';
-        recordedChunks = []; recordedBlob = null; isRecording = false; abortedRecording = false; eyesInFrame = false; eyesStableStartTime = 0; lastHeadPosition = null;
+        recordedChunks = []; recordedBlob = null; isRecording = false; isCountingDown = false;
+        abortedRecording = false; eyesInFrame = false; lastHeadPosition = null;
+        updateStartButton();
     }
 
     function saveForever(){
@@ -523,6 +575,7 @@
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     }
 
+    startBtn.addEventListener('click', startCountdown);
     retryBtn.addEventListener('click', resetToRecording);
     saveBtn.addEventListener('click', saveForever);
     downloadBtn.addEventListener('click', downloadVideo);
