@@ -1,105 +1,98 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ПОСМОТРЕТЬ НА ВСЕ ГЛАЗА</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Запись глаз - ГОРГОНА</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/aws-sdk@2.1251.0/dist/aws-sdk.min.js"></script>
+  <script src="config.js"></script>
   <style>
-    body, html {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background: #000;
-      color: #fff;
-      font-family: system-ui, sans-serif;
-      overflow: auto;
-    }
-    #mosaic {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, 512px);
-      gap: 0;
-      justify-content: center;
-    }
-    video {
-      width: 512px;
-      height: 128px;
-      object-fit: cover;
-    }
-    #loader {
-      height: 50px; /* Для IntersectionObserver */
-    }
+    body, html { margin:0; padding:0; height:100%; background:#000; color:#fff; font-family:system-ui,sans-serif; overflow:hidden; }
+    .center { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; }
+    #title { font-size:32px; margin-bottom:20px; }
+    #frame { width:512px; height:128px; border:2px solid white; border-radius:12px; position:relative; overflow:hidden; }
+    #video { width:100%; height:100%; object-fit:cover; }
+    #timer { font-size:120px; margin-top:20px; }
+    .back { position:absolute; top:20px; left:20px; color:gray; font-size:24px; cursor:pointer; }
+    #preview { width:512px; height:128px; border:2px solid white; border-radius:12px; margin-bottom:20px; }
+    button { padding:10px 20px; margin:10px; font-size:20px; cursor:pointer; border:none; border-radius:8px; }
+    #restart { background:#900; color:white; }
+    #save { background:white; color:black; }
+    #download { background:gray; color:white; }
+    #qr { margin-top:20px; font-size:16px; }
   </style>
 </head>
 <body>
-  <div id="mosaic"></div>
-  <div id="loader"></div>
+  <div class="back" onclick="history.back()">&larr;</div>
+  <div class="center" id="recording">
+    <div id="title">Поднеси глаза к рамке и держи взгляд</div>
+    <div id="frame">
+      <video id="video" autoplay playsinline></video>
+    </div>
+    <div id="timer">7</div>
+  </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js"></script> <!-- Здесь твои ключи SUPABASE_URL и SUPABASE_ANON_KEY -->
+  <div class="center" id="success" style="display:none;">
+    <div id="title">Твои глаза теперь смотрят на мир вечно.</div>
+    <p>Сохрани эту ссылку — только по ней ты сможешь удалить их навсегда.</p>
+    <div id="qr"></div>
+    <a id="deleteLink" href=""></a>
+  </div>
+
+  <div class="center" id="previewSection" style="display:none;">
+    <video id="preview" controls autoplay loop></video>
+    <button id="restart">ЗАПИСАТЬ ЗАНОВО</button>
+    <button id="save">ОСТАВИТЬ НАВСЕГДА</button>
+    <button id="download">СКАЧАТЬ НА КОМПЬЮТЕР</button>
+  </div>
 
   <script>
-    const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const mosaic = document.getElementById('mosaic');
-    const loader = document.getElementById('loader');
-    let offset = 0;
-    const limit = 50;
-    let isLoading = false;
+    const video = document.getElementById('video');
+    const timer = document.getElementById('timer');
+    const recording = document.getElementById('recording');
+    const previewSection = document.getElementById('previewSection');
+    const success = document.getElementById('success');
+    const preview = document.getElementById('preview');
+    const qr = document.getElementById('qr');
+    const deleteLink = document.getElementById('deleteLink');
+    let recorder;
+    let chunks = [];
+    let stream;
+    let timeoutId;
+    let closedEyesTime = 0;
+    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`});
+    faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
+    faceMesh.onResults(onResults);
+    const camera = new Camera(video, { onFrame: async () => await faceMesh.send({image: video}), width: 512, height: 128 });
+    camera.start();
+    let seconds = 7;
 
-    async function loadMore() {
-      if (isLoading) return;
-      isLoading = true;
-
-      const { data, error } = await supabase
-        .from('eyes')
-        .select('cid')
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1);
-
-      if (error) {
-        console.error(error);
-        isLoading = false;
-        return;
+    function onResults(results) {
+      if (results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+        const leftEye = landmarks.slice(33, 42); // Примерные индексы для левого глаза
+        const rightEye = landmarks.slice(362, 386); // Для правого
+        const leftClosed = isEyeClosed(leftEye);
+        const rightClosed = isEyeClosed(rightEye);
+        if (leftClosed && rightClosed) closedEyesTime += 0.1; // Примерно 100 мс на фрейм
+        else closedEyesTime = 0;
+        if (closedEyesTime > 1.5 || !isEyesInFrame(landmarks) || isStrongMovement(landmarks)) {
+          resetTimer();
+          return;
+        }
+        if (seconds > 0) {
+          timer.textContent = seconds;
+          timeoutId = setTimeout(() => {
+            seconds--;
+            onResults(results); // Рекурсия для таймера
+          }, 1000);
+        } else {
+          stopRecording();
+        }
+      } else {
+        resetTimer();
       }
-
-      if (data.length > 0) {
-        data.forEach(row => {
-          const video = document.createElement('video');
-          video.src = `https://ipfs.filebase.io/ipfs/${row.cid}`;
-          video.autoplay = true;
-          video.loop = true;
-          video.muted = true;
-          mosaic.appendChild(video);
-        });
-        offset += data.length;
-      }
-
-      isLoading = false;
     }
 
-    // Initial load
-    loadMore();
-
-    // Infinite scroll
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        loadMore();
-      }
-    }, { threshold: 0.1 });
-
-    observer.observe(loader);
-
-    // Realtime inserts
-    supabase
-      .channel('eyes-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'eyes' }, payload => {
-        const video = document.createElement('video');
-        video.src = `https://ipfs.filebase.io/ipfs/${payload.new.cid}`;
-        video.autoplay = true;
-        video.loop = true;
-        video.muted = true;
-        mosaic.prepend(video); // Добавляем новые сверху
-      })
-      .subscribe();
-  </script>
-</body>
-</html>
