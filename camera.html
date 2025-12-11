@@ -96,3 +96,82 @@
       }
     }
 
+    function isEyeClosed(eyeLandmarks) {
+      const verticalDist = Math.abs(eyeLandmarks[1].y - eyeLandmarks[5].y); // Верх и низ глаза
+      return verticalDist < 0.02; // Порог для закрытого глаза
+    }
+
+    function isEyesInFrame(landmarks) {
+      const leftEyeX = landmarks[33].x; // Левое глаз
+      const rightEyeX = landmarks[263].x; // Правое глаз
+      return leftEyeX > 0.1 && leftEyeX < 0.4 && rightEyeX > 0.6 && rightEyeX < 0.9; // Примерно в рамке
+    }
+
+    function isStrongMovement(landmarks) {
+      // Простая проверка: сравни с предыдущим кадром (нужно хранить prevLandmarks)
+      return false; // Для простоты, реализуй если нужно
+    }
+
+    function resetTimer() {
+      clearTimeout(timeoutId);
+      seconds = 7;
+      timer.textContent = 7;
+    }
+
+    function startRecording() {
+      chunks = [];
+      recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.start();
+    }
+
+    function stopRecording() {
+      recorder.stop();
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, {type: 'video/webm'});
+        preview.src = URL.createObjectURL(blob);
+        recording.style.display = 'none';
+        previewSection.style.display = 'block';
+        document.getElementById('restart').onclick = () => {
+          previewSection.style.display = 'none';
+          recording.style.display = 'block';
+          seconds = 7;
+        };
+        document.getElementById('save').onclick = () => saveVideo(blob);
+        document.getElementById('download').onclick = () => downloadVideo(blob);
+      };
+    }
+
+    async function saveVideo(blob) {
+      const s3 = new AWS.S3({ endpoint: 'https://s3.filebase.com', accessKeyId: FILEBASE_ACCESS_KEY, secretAccessKey: FILEBASE_SECRET_KEY, signatureVersion: 'v4' });
+      const params = { Bucket: 'gorgona', Key: Date.now() + '.webm', Body: blob, ACL: 'public-read' };
+      const upload = await s3.upload(params).promise();
+      const cid = upload.Location.split('/').pop();
+      const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      await supabase.from('eyes').insert({ cid });
+      const deleteKey = crypto.randomUUID();
+      const deleteUrl = `https://gorgonaeyes.netlify.app/delete/${deleteKey}`;
+      qr.innerHTML = `QR: (используй библиотеку для генерации QR, напр qrcode.js)`;
+      deleteLink.href = deleteUrl;
+      deleteLink.textContent = deleteUrl;
+      previewSection.style.display = 'none';
+      success.style.display = 'block';
+      // Сохрани deleteKey в Supabase или другом месте для удаления
+    }
+
+    function downloadVideo(blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'eyes.webm';
+      a.click();
+    }
+
+    navigator.mediaDevices.getUserMedia({ video: { width: 512, height: 128 } }).then(s => {
+      stream = s;
+      video.srcObject = s;
+      startRecording(); // Начать запись сразу, но сохранять только после 7 сек
+    }).catch(console.error);
+  </script>
+</body>
+</html>
