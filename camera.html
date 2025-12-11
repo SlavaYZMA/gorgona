@@ -163,64 +163,62 @@
 
     <script>
         (function() {
-            // DOM Elements
-            const videoElement = document.getElementById('videoElement');
-            const previewVideo = document.getElementById('previewVideo');
-            const frameContainer = document.getElementById('frameContainer');
-            const timerDisplay = document.getElementById('timer');
-            const statusText = document.getElementById('statusText');
-            const buttonsContainer = document.getElementById('buttonsContainer');
-            const instruction = document.getElementById('instruction');
-            const retryBtn = document.getElementById('retryBtn');
-            const saveBtn = document.getElementById('saveBtn');
-            const downloadBtn = document.getElementById('downloadBtn');
-            const hiddenCanvas = document.getElementById('hiddenCanvas');
+            var videoElement = document.getElementById('videoElement');
+            var previewVideo = document.getElementById('previewVideo');
+            var frameContainer = document.getElementById('frameContainer');
+            var timerDisplay = document.getElementById('timer');
+            var statusText = document.getElementById('statusText');
+            var buttonsContainer = document.getElementById('buttonsContainer');
+            var instruction = document.getElementById('instruction');
+            var retryBtn = document.getElementById('retryBtn');
+            var saveBtn = document.getElementById('saveBtn');
+            var downloadBtn = document.getElementById('downloadBtn');
+            var hiddenCanvas = document.getElementById('hiddenCanvas');
 
-            // State
-            let mediaStream = null;
-            let mediaRecorder = null;
-            let recordedChunks = [];
-            let recordedBlob = null;
-            let faceMesh = null;
-            let camera = null;
+            var mediaStream = null;
+            var mediaRecorder = null;
+            var recordedChunks = [];
+            var recordedBlob = null;
+            var faceMesh = null;
+            var camera = null;
 
-            let isRecording = false;
-            let recordingStartTime = 0;
-            let timerValue = 7;
-            let timerInterval = null;
+            var isRecording = false;
+            var recordingStartTime = 0;
+            var timerValue = 7;
+            var timerInterval = null;
 
-            let eyesInFrame = false;
-            let eyesStableStartTime = 0;
-            let eyesClosedStartTime = 0;
-            let lastHeadPosition = null;
-            let headJerkThreshold = 50;
-            let eyeClosedThreshold = 0.02;
-            let requiredStableTime = 500;
+            var eyesInFrame = false;
+            var eyesStableStartTime = 0;
+            var eyesClosedStartTime = 0;
+            var lastHeadPosition = null;
+            var headJerkThreshold = 50;
+            var eyeClosedThreshold = 0.02;
+            var requiredStableTime = 500;
 
-            let blinkStartTime = 0;
-            let isBlinking = false;
-            let blinkDurationThreshold = 300;
+            var blinkStartTime = 0;
+            var isBlinking = false;
+            var blinkDurationThreshold = 300;
 
-            // Frame dimensions
-            const FRAME_WIDTH = 512;
-            const FRAME_HEIGHT = 128;
+            var FRAME_WIDTH = 512;
+            var FRAME_HEIGHT = 128;
 
-            // Initialize
-            async function init() {
-                try {
-                    await setupCamera();
-                    await setupFaceMesh();
-                    statusText.textContent = 'Камера готова. Поместите глаза в рамку.';
-                } catch (error) {
-                    console.error('Initialization error:', error);
-                    statusText.textContent = 'Ошибка: ' + error.message;
-                    // Try fallback
-                    tryFallbackDetection();
-                }
+            function init() {
+                setupCamera()
+                    .then(function() {
+                        return setupFaceMesh();
+                    })
+                    .then(function() {
+                        statusText.textContent = 'Камера готова. Поместите глаза в рамку.';
+                    })
+                    .catch(function(error) {
+                        console.error('Initialization error:', error);
+                        statusText.textContent = 'Ошибка: ' + error.message;
+                        tryFallbackDetection();
+                    });
             }
 
-            async function setupCamera() {
-                mediaStream = await navigator.mediaDevices.getUserMedia({
+            function setupCamera() {
+                return navigator.mediaDevices.getUserMedia({
                     video: {
                         width: { ideal: 1280 },
                         height: { ideal: 720 },
@@ -228,23 +226,26 @@
                         frameRate: { ideal: 20, max: 30 }
                     },
                     audio: false
-                });
-
-                videoElement.srcObject = mediaStream;
-                await new Promise(resolve => {
-                    videoElement.onloadedmetadata = () => {
-                        videoElement.play();
-                        resolve();
-                    };
+                }).then(function(stream) {
+                    mediaStream = stream;
+                    videoElement.srcObject = stream;
+                    return new Promise(function(resolve) {
+                        videoElement.onloadedmetadata = function() {
+                            videoElement.play().then(resolve).catch(function(e) {
+                                console.log('Autoplay blocked, user interaction needed:', e);
+                                resolve();
+                            });
+                        };
+                    });
                 });
             }
 
-            async function setupFaceMesh() {
-                return new Promise((resolve, reject) => {
+            function setupFaceMesh() {
+                return new Promise(function(resolve, reject) {
                     try {
                         faceMesh = new FaceMesh({
-                            locateFile: (file) => {
-                                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`;
+                            locateFile: function(file) {
+                                return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/' + file;
                             }
                         });
 
@@ -258,10 +259,11 @@
                         faceMesh.onResults(onFaceMeshResults);
 
                         camera = new Camera(videoElement, {
-                            onFrame: async () => {
+                            onFrame: function() {
                                 if (faceMesh && !isRecording) {
-                                    await faceMesh.send({ image: videoElement });
+                                    return faceMesh.send({ image: videoElement });
                                 }
+                                return Promise.resolve();
                             },
                             width: 1280,
                             height: 720
@@ -277,15 +279,14 @@
             function tryFallbackDetection() {
                 statusText.textContent = 'Используется упрощённое определение...';
                 
-                // Fallback: simple motion-based detection
-                let previousFrame = null;
-                const detectionCanvas = document.createElement('canvas');
+                var previousFrame = null;
+                var detectionCanvas = document.createElement('canvas');
                 detectionCanvas.width = 160;
                 detectionCanvas.height = 120;
-                const detectionCtx = detectionCanvas.getContext('2d');
+                var detectionCtx = detectionCanvas.getContext('2d');
 
-                let stableFrameCount = 0;
-                const requiredStableFrames = 30;
+                var stableFrameCount = 0;
+                var requiredStableFrames = 30;
 
                 function detectMotion() {
                     if (isRecording || !videoElement.videoWidth) {
@@ -294,11 +295,11 @@
                     }
 
                     detectionCtx.drawImage(videoElement, 0, 0, 160, 120);
-                    const currentFrame = detectionCtx.getImageData(0, 0, 160, 120);
+                    var currentFrame = detectionCtx.getImageData(0, 0, 160, 120);
 
                     if (previousFrame) {
-                        let diff = 0;
-                        for (let i = 0; i < currentFrame.data.length; i += 4) {
+                        var diff = 0;
+                        for (var i = 0; i < currentFrame.data.length; i += 4) {
                             diff += Math.abs(currentFrame.data[i] - previousFrame.data[i]);
                         }
                         diff /= (currentFrame.data.length / 4);
@@ -313,7 +314,6 @@
                             }
                         } else {
                             if (diff > 30 && eyesInFrame) {
-                                // Head jerk detected
                                 resetTimer('Обнаружено резкое движение');
                             }
                             stableFrameCount = 0;
@@ -338,60 +338,48 @@
                     return;
                 }
 
-                const landmarks = results.multiFaceLandmarks[0];
+                var landmarks = results.multiFaceLandmarks[0];
 
-                // Eye landmarks indices for iris
-                const leftEyeIndices = [33, 160, 158, 133, 153, 144];
-                const rightEyeIndices = [362, 385, 387, 263, 373, 380];
-                const leftIrisIndices = [468, 469, 470, 471, 472];
-                const rightIrisIndices = [473, 474, 475, 476, 477];
+                var leftEyeIndices = [33, 160, 158, 133, 153, 144];
+                var rightEyeIndices = [362, 385, 387, 263, 373, 380];
 
-                // Calculate eye center positions
-                const leftEyeCenter = getCenter(landmarks, leftEyeIndices);
-                const rightEyeCenter = getCenter(landmarks, rightEyeIndices);
-                const eyesCenterY = (leftEyeCenter.y + rightEyeCenter.y) / 2;
-                const eyesCenterX = (leftEyeCenter.x + rightEyeCenter.x) / 2;
+                var leftEyeCenter = getCenter(landmarks, leftEyeIndices);
+                var rightEyeCenter = getCenter(landmarks, rightEyeIndices);
+                var eyesCenterY = (leftEyeCenter.y + rightEyeCenter.y) / 2;
+                var eyesCenterX = (leftEyeCenter.x + rightEyeCenter.x) / 2;
 
-                // Check if eyes are in the frame area (middle third vertically, middle horizontally)
-                const inFrameY = eyesCenterY > 0.35 && eyesCenterY < 0.65;
-                const inFrameX = eyesCenterX > 0.25 && eyesCenterX < 0.75;
+                var inFrameY = eyesCenterY > 0.35 && eyesCenterY < 0.65;
+                var inFrameX = eyesCenterX > 0.25 && eyesCenterX < 0.75;
 
-                // Check for eye closure using Eye Aspect Ratio
-                const leftEAR = calculateEAR(landmarks, [33, 160, 158, 133, 153, 144]);
-                const rightEAR = calculateEAR(landmarks, [362, 385, 387, 263, 373, 380]);
-                const avgEAR = (leftEAR + rightEAR) / 2;
+                var leftEAR = calculateEAR(landmarks, [33, 160, 158, 133, 153, 144]);
+                var rightEAR = calculateEAR(landmarks, [362, 385, 387, 263, 373, 380]);
+                var avgEAR = (leftEAR + rightEAR) / 2;
 
-                const eyesClosed = avgEAR < eyeClosedThreshold;
+                var eyesClosed = avgEAR < eyeClosedThreshold;
 
-                // Handle blinking vs prolonged closure
                 if (eyesClosed) {
                     if (!isBlinking && blinkStartTime === 0) {
                         blinkStartTime = Date.now();
                         isBlinking = true;
                     } else if (Date.now() - blinkStartTime > 1500) {
-                        // Eyes closed for more than 1.5 seconds
                         if (eyesInFrame) {
                             resetTimer('Глаза закрыты слишком долго');
                         }
                         return;
                     }
                 } else {
-                    if (isBlinking && Date.now() - blinkStartTime < blinkDurationThreshold) {
-                        // This was just a blink, ignore
-                    }
                     blinkStartTime = 0;
                     isBlinking = false;
                 }
 
-                // Check for head jerk
-                const currentHeadPos = {
+                var currentHeadPos = {
                     x: landmarks[1].x,
                     y: landmarks[1].y,
                     z: landmarks[1].z
                 };
 
                 if (lastHeadPosition) {
-                    const movement = Math.sqrt(
+                    var movement = Math.sqrt(
                         Math.pow((currentHeadPos.x - lastHeadPosition.x) * 1000, 2) +
                         Math.pow((currentHeadPos.y - lastHeadPosition.y) * 1000, 2)
                     );
@@ -406,7 +394,6 @@
                 }
                 lastHeadPosition = currentHeadPos;
 
-                // Update state
                 if (inFrameY && inFrameX && !eyesClosed) {
                     if (!eyesInFrame) {
                         eyesInFrame = true;
@@ -414,7 +401,6 @@
                         statusText.textContent = 'Глаза обнаружены. Держите взгляд...';
                     }
 
-                    // Check if stable enough to start countdown
                     if (Date.now() - eyesStableStartTime > requiredStableTime && !timerInterval) {
                         startTimerCountdown();
                     }
@@ -427,10 +413,10 @@
             }
 
             function getCenter(landmarks, indices) {
-                let sumX = 0, sumY = 0;
-                for (const idx of indices) {
-                    sumX += landmarks[idx].x;
-                    sumY += landmarks[idx].y;
+                var sumX = 0, sumY = 0;
+                for (var i = 0; i < indices.length; i++) {
+                    sumX += landmarks[indices[i]].x;
+                    sumY += landmarks[indices[i]].y;
                 }
                 return {
                     x: sumX / indices.length,
@@ -439,17 +425,16 @@
             }
 
             function calculateEAR(landmarks, indices) {
-                // Eye Aspect Ratio calculation
-                const p1 = landmarks[indices[0]];
-                const p2 = landmarks[indices[1]];
-                const p3 = landmarks[indices[2]];
-                const p4 = landmarks[indices[3]];
-                const p5 = landmarks[indices[4]];
-                const p6 = landmarks[indices[5]];
+                var p1 = landmarks[indices[0]];
+                var p2 = landmarks[indices[1]];
+                var p3 = landmarks[indices[2]];
+                var p4 = landmarks[indices[3]];
+                var p5 = landmarks[indices[4]];
+                var p6 = landmarks[indices[5]];
 
-                const vertical1 = Math.sqrt(Math.pow(p2.x - p6.x, 2) + Math.pow(p2.y - p6.y, 2));
-                const vertical2 = Math.sqrt(Math.pow(p3.x - p5.x, 2) + Math.pow(p3.y - p5.y, 2));
-                const horizontal = Math.sqrt(Math.pow(p1.x - p4.x, 2) + Math.pow(p1.y - p4.y, 2));
+                var vertical1 = Math.sqrt(Math.pow(p2.x - p6.x, 2) + Math.pow(p2.y - p6.y, 2));
+                var vertical2 = Math.sqrt(Math.pow(p3.x - p5.x, 2) + Math.pow(p3.y - p5.y, 2));
+                var horizontal = Math.sqrt(Math.pow(p1.x - p4.x, 2) + Math.pow(p1.y - p4.y, 2));
 
                 return (vertical1 + vertical2) / (2.0 * horizontal);
             }
@@ -461,7 +446,7 @@
                 timerValue = 7;
                 timerDisplay.textContent = timerValue;
 
-                timerInterval = setInterval(() => {
+                timerInterval = setInterval(function() {
                     timerValue--;
                     timerDisplay.textContent = timerValue;
 
@@ -485,78 +470,91 @@
                 statusText.textContent = reason || 'Таймер сброшен';
             }
 
+            function calculateVisibleRegion() {
+                var videoWidth = videoElement.videoWidth;
+                var videoHeight = videoElement.videoHeight;
+
+                var frameRect = frameContainer.getBoundingClientRect();
+                var containerWidth = frameRect.width;
+                var containerHeight = frameRect.height;
+
+                var scale = Math.max(containerWidth / videoWidth, containerHeight / videoHeight);
+
+                var scaledWidth = videoWidth * scale;
+                var scaledHeight = videoHeight * scale;
+
+                var offsetX = (containerWidth - scaledWidth) / 2;
+                var offsetY = (containerHeight - scaledHeight) / 2;
+
+                var sourceX = Math.max(0, -offsetX / scale);
+                var sourceY = Math.max(0, -offsetY / scale);
+                var sourceWidth = Math.min(videoWidth - sourceX, containerWidth / scale);
+                var sourceHeight = Math.min(videoHeight - sourceY, containerHeight / scale);
+
+                return {
+                    sx: sourceX,
+                    sy: sourceY,
+                    sw: sourceWidth,
+                    sh: sourceHeight
+                };
+            }
+
             function startRecording() {
                 isRecording = true;
                 recordedChunks = [];
                 statusText.textContent = 'Идёт запись...';
                 instruction.textContent = 'Запись...';
 
-                // Setup canvas for recording at correct resolution
                 hiddenCanvas.width = FRAME_WIDTH;
                 hiddenCanvas.height = FRAME_HEIGHT;
-                const ctx = hiddenCanvas.getContext('2d');
+                var ctx = hiddenCanvas.getContext('2d');
 
-                // Create canvas stream
-                const canvasStream = hiddenCanvas.captureStream(20);
+                var canvasStream = hiddenCanvas.captureStream(20);
+                var animationId = null;
 
-                // Draw video to canvas with correct cropping matching object-fit: cover + mirror
                 function drawFrame() {
-                    if (!isRecording) return;
+                    if (!isRecording) {
+                        if (animationId) {
+                            cancelAnimationFrame(animationId);
+                        }
+                        return;
+                    }
 
-                    const videoWidth = videoElement.videoWidth;
-                    const videoHeight = videoElement.videoHeight;
+                    var region = calculateVisibleRegion();
 
-                    // Calculate scale factor for object-fit: cover
-                    const scale = Math.max(FRAME_WIDTH / videoWidth, FRAME_HEIGHT / videoHeight);
-
-                    // Scaled dimensions
-                    const scaledWidth = videoWidth * scale;
-                    const scaledHeight = videoHeight * scale;
-
-                    // Offset (centering)
-                    const offsetX = (FRAME_WIDTH - scaledWidth) / 2;
-                    const offsetY = (FRAME_HEIGHT - scaledHeight) / 2;
-
-                    // Convert to source video coordinates
-                    const sourceX = -offsetX / scale;
-                    const sourceY = -offsetY / scale;
-                    const sourceWidth = FRAME_WIDTH / scale;
-                    const sourceHeight = FRAME_HEIGHT / scale;
-
-                    // Apply mirror transformation and draw
                     ctx.save();
                     ctx.scale(-1, 1);
                     ctx.translate(-FRAME_WIDTH, 0);
                     ctx.drawImage(
                         videoElement,
-                        sourceX, sourceY, sourceWidth, sourceHeight,
+                        region.sx, region.sy, region.sw, region.sh,
                         0, 0, FRAME_WIDTH, FRAME_HEIGHT
                     );
                     ctx.restore();
 
-                    requestAnimationFrame(drawFrame);
+                    animationId = requestAnimationFrame(drawFrame);
                 }
                 drawFrame();
 
-                // Setup MediaRecorder
-                const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
-                    ? 'video/webm;codecs=vp9' 
-                    : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-                        ? 'video/webm;codecs=vp8'
-                        : 'video/webm';
+                var mimeType = 'video/webm';
+                if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+                    mimeType = 'video/webm;codecs=vp9';
+                } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+                    mimeType = 'video/webm;codecs=vp8';
+                }
 
                 mediaRecorder = new MediaRecorder(canvasStream, {
                     mimeType: mimeType,
                     videoBitsPerSecond: 1000000
                 });
 
-                mediaRecorder.ondataavailable = (event) => {
+                mediaRecorder.ondataavailable = function(event) {
                     if (event.data && event.data.size > 0) {
                         recordedChunks.push(event.data);
                     }
                 };
 
-                mediaRecorder.onstop = () => {
+                mediaRecorder.onstop = function() {
                     recordedBlob = new Blob(recordedChunks, { type: mimeType });
                     showPreview();
                 };
@@ -564,17 +562,15 @@
                 mediaRecorder.start(100);
                 recordingStartTime = Date.now();
 
-                // Stop recording after 7 seconds
-                setTimeout(() => {
+                setTimeout(function() {
                     if (mediaRecorder && mediaRecorder.state === 'recording') {
                         mediaRecorder.stop();
                         isRecording = false;
                     }
                 }, 7000);
 
-                // Update timer during recording
-                let recordTimer = 7;
-                const recordInterval = setInterval(() => {
+                var recordTimer = 7;
+                var recordInterval = setInterval(function() {
                     recordTimer--;
                     timerDisplay.textContent = recordTimer;
                     if (recordTimer <= 0) {
@@ -587,7 +583,9 @@
                 videoElement.style.display = 'none';
                 previewVideo.style.display = 'block';
                 previewVideo.src = URL.createObjectURL(recordedBlob);
-                previewVideo.play();
+                previewVideo.play().catch(function(e) {
+                    console.log('Preview autoplay blocked:', e);
+                });
 
                 timerDisplay.style.display = 'none';
                 statusText.style.display = 'none';
@@ -615,7 +613,7 @@
                 lastHeadPosition = null;
             }
 
-            async function saveForever() {
+            function saveForever() {
                 if (!recordedBlob) {
                     console.error('No recorded video to save');
                     return;
@@ -624,16 +622,13 @@
                 statusText.style.display = 'block';
                 statusText.textContent = 'Сохранение...';
 
-                try {
-                    const formData = new FormData();
-                    formData.append('video', recordedBlob, 'eye-recording.webm');
+                var formData = new FormData();
+                formData.append('video', recordedBlob, 'eye-recording.webm');
 
-                    // Netlify Function endpoint (placeholder)
-                    const response = await fetch('/.netlify/functions/save-video', {
-                        method: 'POST',
-                        body: formData
-                    });
-
+                fetch('/.netlify/functions/save-video', {
+                    method: 'POST',
+                    body: formData
+                }).then(function(response) {
                     if (response.ok) {
                         console.log('Video saved successfully');
                         statusText.textContent = 'Сохранено!';
@@ -641,10 +636,10 @@
                         console.log('Server response:', response.status);
                         statusText.textContent = 'Запрос отправлен (тестовый режим)';
                     }
-                } catch (error) {
+                }).catch(function(error) {
                     console.log('Save request attempted:', error.message);
                     statusText.textContent = 'Запрос отправлен (тестовый режим)';
-                }
+                });
             }
 
             function downloadVideo() {
@@ -653,8 +648,8 @@
                     return;
                 }
 
-                const url = URL.createObjectURL(recordedBlob);
-                const a = document.createElement('a');
+                var url = URL.createObjectURL(recordedBlob);
+                var a = document.createElement('a');
                 a.href = url;
                 a.download = 'eye-recording-' + Date.now() + '.webm';
                 document.body.appendChild(a);
@@ -663,12 +658,17 @@
                 URL.revokeObjectURL(url);
             }
 
-            // Event listeners
             retryBtn.addEventListener('click', resetToRecording);
             saveBtn.addEventListener('click', saveForever);
             downloadBtn.addEventListener('click', downloadVideo);
 
-            // Initialize on load
+            document.addEventListener('click', function initPlay() {
+                if (videoElement.paused) {
+                    videoElement.play().catch(function() {});
+                }
+                document.removeEventListener('click', initPlay);
+            });
+
             init();
         })();
     </script>
