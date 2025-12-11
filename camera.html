@@ -1,100 +1,105 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Все глаза Горгоны</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ПОСМОТРЕТЬ НА ВСЕ ГЛАЗА</title>
   <style>
     body, html {
       margin: 0;
       padding: 0;
       height: 100%;
       background: #000;
-      overflow: hidden;
+      color: #fff;
       font-family: system-ui, sans-serif;
+      overflow: auto;
     }
-    #grid {
+    #mosaic {
       display: grid;
-      grid-template-columns: repeat(auto-fill, 512px);
-      grid-auto-rows: 128px;
+      grid-template-columns: repeat(auto-fit, 512px);
       gap: 0;
       justify-content: center;
-      padding: 0;
     }
     video {
       width: 512px;
       height: 128px;
       object-fit: cover;
-      display: block;
     }
-    .back {
-      position: fixed;
-      top: 20px;
-      left: 20px;
-      color: #666;
-      font-size: 24px;
-      text-decoration: none;
-      z-index: 100;
+    #loader {
+      height: 50px; /* Для IntersectionObserver */
     }
-    .back:hover { color: #999; }
   </style>
 </head>
 <body>
+  <div id="mosaic"></div>
+  <div id="loader"></div>
 
-  <a href="/" class="back">← назад</a>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script> <!-- Здесь твои ключи SUPABASE_URL и SUPABASE_ANON_KEY -->
 
-  <div id="grid"></div>
+  <script>
+    const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const mosaic = document.getElementById('mosaic');
+    const loader = document.getElementById('loader');
+    let offset = 0;
+    const limit = 50;
+    let isLoading = false;
 
-  <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/module/index.js';
+    async function loadMore() {
+      if (isLoading) return;
+      isLoading = true;
 
-    const SUPABASE_URL = 'https://твой-проект.supabase.co';       // ← потом заменишь
-    const SUPABASE_ANON_KEY = 'твой-anon-key';                    // ← потом заменишь
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    const grid = document.getElementById('grid');
-
-    // Функция создания видео-элемента
-    function addVideo(cid) {
-      const video = document.createElement('video');
-      video.src = `https://gateway.filebase.io/ipfs/${cid}`;
-      video.muted = true;
-      video.loop = true;
-      video.playsInline = true;
-      video.autoplay = true;
-
-      // Пытаемся запустить даже на мобильных
-      video.play().catch(() => {});
-
-      grid.appendChild(video);
-    }
-
-    // Загружаем уже существующие глаза при открытии страницы
-    async function loadExisting() {
       const { data, error } = await supabase
         .from('eyes')
         .select('cid')
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
 
       if (error) {
-        console.error('Ошибка загрузки:', error);
+        console.error(error);
+        isLoading = false;
         return;
       }
 
-      data.forEach(row => addVideo(row.cid));
+      if (data.length > 0) {
+        data.forEach(row => {
+          const video = document.createElement('video');
+          video.src = `https://ipfs.filebase.io/ipfs/${row.cid}`;
+          video.autoplay = true;
+          video.loop = true;
+          video.muted = true;
+          mosaic.appendChild(video);
+        });
+        offset += data.length;
+      }
+
+      isLoading = false;
     }
 
-    // Подписываемся на новые глаза в реальном времени
+    // Initial load
+    loadMore();
+
+    // Infinite scroll
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) {
+        loadMore();
+      }
+    }, { threshold: 0.1 });
+
+    observer.observe(loader);
+
+    // Realtime inserts
     supabase
-      .channel('public:eyes')
+      .channel('eyes-realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'eyes' }, payload => {
-        addVideo(payload.new.cid);
+        const video = document.createElement('video');
+        video.src = `https://ipfs.filebase.io/ipfs/${payload.new.cid}`;
+        video.autoplay = true;
+        video.loop = true;
+        video.muted = true;
+        mosaic.prepend(video); // Добавляем новые сверху
       })
       .subscribe();
-
-    // Старт
-    loadExisting();
   </script>
 </body>
 </html>
