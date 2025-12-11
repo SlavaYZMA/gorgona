@@ -3,145 +3,97 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Горгона: запись глаз</title>
+  <title>Горгона — запись глаз</title>
   <style>
-    body, html { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
-    #container { position:relative; width:100vw; height:100vh; }
-    video { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); max-width:100%; max-height:100%; object-fit:cover; }
-    #frame { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:512px; height:128px; border:5px solid #fff; box-sizing:border-box; pointer-events:none; }
-    #timer { position:absolute; top:calc(50% + 90px); left:50%; transform:translateX(-50%); font-size:56px; color:#0f9; opacity:0; }
-    #status { position:absolute; bottom:50px; left:50%; transform:translateX(-50%); font-size:22px; color:#fff; }
-    button { position:absolute; bottom:100px; padding:18px 36px; font-size:22px; border:none; border-radius:12px; cursor:pointer; display:none; }
-    #retake { left:15%; background:#900; color:#fff; }
-    #confirm { right:15%; background:#090; color:#fff; }
-    #preview { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); max-width:90%; max-height:60%; border:4px solid #444; display:none; }
+    body,html{margin:0;padding:0;height:100%;background:#000;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
+    video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+    canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scaleX(-1);border:4px solid #fff;border-radius:12px;box-shadow:0 0 40px rgba(255,255,255,0.7);pointer-events:none}
+    #info{position:absolute;bottom:100px;left:0;width:100%;text-align:center;font-size:24px;opacity:0.8}
+    #timer{position:absolute;top:20px;left:0;width:100%;text-align:center;font-size:64px;font-weight:bold;color:#0f0;text-shadow:0 0 20px #000;opacity:0}
+    button{position:fixed;bottom:20px;width:calc(50% - 20px);padding:20px;font-size:22px;border:none;border-radius:12px;cursor:pointer;z-index:10}
+    #retry{left:10px;background:#900;color:#fff}
+    #send{right:10px;background:#090;color:#fff}
+    #preview{display:none;width:100%;height:100%;object-fit:contain;background:#000}
   </style>
 </head>
 <body>
 
-<div id="container">
-  <video id="video" autoplay playsinline muted></video>
-  <div id="frame"></div>
-  <div id="timer">05</div>
-  <div id="status">Поднеси глаза точно в белую рамку</div>
-  <button id="retake">ПЕРЕЗАПИСАТЬ</button>
-  <button id="confirm">ПОДТВЕРДИТЬ</button>
-  <img id="preview">
-</div>
+<video id="video" autoplay playsinline muted></video>
+<canvas id="frame" width="512" height="128"></canvas>
+<div id="timer">3</div>
+<div id="info">Поднеси глаза точно в рамку<br>Держи неподвижно 3 секунды</div>
+<button id="retry" style="display:none">Перезаписать</button>
+<button id="send" style="display:none">Отправить в Горгону</button>
+<video id="preview" controls loop></video>
 
 <script>
   const video = document.getElementById('video');
-  const frame = document.getElementById('frame');
-  const timerEl = document.getElementById('timer');
-  const statusEl = document.getElementById('status');
-  const retake = document.getElementById('retake');
-  const confirm = document.getElementById('confirm');
+  const canvas = document.getElementById('frame');
+  const ctx = canvas.getContext('2d');
+  const timer = document.getElementById('timer');
+  const info = document.getElementById('info');
   const preview = document.getElementById('preview');
+  const retry = document.getElementById('retry');
+  const send = document.getElementById('send');
 
-  let stream = null;
-  let recording = false;
-  let seconds = 0;
-  let interval = null;
+  let stream, recorder, chunks = [], countdown;
 
-  // Запуск камеры
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-    .then(s => {
-      stream = s;
-      video.srcObject = stream;
-      video.play();
-      checkFrame();
-    })
-    .catch(err => {
-      statusEl.textContent = "Ошибка камеры. Разреширь разрешения.";
-      console.error(err);
-    });
-
-  // Проверка, что в рамке достаточно тёмных пикселей (это глаза)
-  function checkFrame() {
-    if (!recording && video.readyState === 4) {
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
-
-      const imageData = ctx.getImageData(0,0,512,128).data;
-      let dark = 0;
-      for (let i = 0; i < imageData.length; i += 12) { // шаг 12 — быстрее
-        const brightness = (imageData[i] + imageData[i+1] + imageData[i+2]) / 3;
-        if (brightness < 100) dark++;
-      }
-      const eyesDetected = dark > 4000; // ≈12–15 % тёмных пикселей
-
-      if (eyesDetected && !recording) startRecording();
-      else if (!eyesDetected && recording) stopRecording();
-    }
-    requestAnimationFrame(checkFrame);
+  async function start() {
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}, audio:false});
+    video.srcObject = stream;
+    drawLoop();
   }
+
+  function drawLoop() {
+    ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
+    requestAnimationFrame(drawLoop);
+  }
+
+  // Ждём 3 секунды неподвижности (просто по таймеру после загрузки)
+  setTimeout)
+  setTimeout(() => {
+    timer.style.opacity = 1;
+    let sec = 3;
+    const int = setInterval(() => {
+      sec--;
+      timer.textContent = sec;
+      if (sec <= 0) {
+        clearInterval(int);
+        timer.textContent = "Запись!";
+        startRecording();
+      }
+    }, 1000);
+  }, 1500);
 
   function startRecording() {
-    if (recording) return;
-    recording = true;
-    seconds = 5;
-    timerEl.style.opacity = 1;
-    timerEl.textContent = "05";
-    statusEl.textContent = "Держи неподвижно 5 секунд...";
-
-    interval = setInterval(() => {
-      seconds--;
-      timerEl.textContent = String(seconds).padStart(2,'0');
-      if (seconds <= 0) finishRecording();
-    }, 1000);
-  }
-
-  function stopRecording() {
-    recording = false;
-    clearInterval(interval);
-    timerEl.style.opacity = 0;
-    statusEl.textContent = "Поднеси глаза точно в рамку";
-  }
-
-  function finishRecording() {
-    clearInterval(interval);
-    recording = false;
-    timerEl.style.opacity = 0;
-    statusEl.textContent = "Готово!";
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,512,128);
-    ctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
-
-    canvas.toBlob(blob => {
+    chunks = [];
+    recorder = new MediaRecorder(stream, {mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/mp4'});
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, {type: 'video/webm'});
       const url = URL.createObjectURL(blob);
       preview.src = url;
       preview.style.display = 'block';
-      retake.style.display = 'block';
-      confirm.style.display = 'block';
-      video.style.opacity = 0.2;
-      frame.style.display = 'none';
-    }, 'image/jpeg', 0.92);
+      video.style.display = 'none';
+      canvas.style.display = 'none';
+      timer.style.display = 'none';
+      info.textContent = "Готово!";
+      retry.style.display = 'block';
+      send.style.display = 'block';
+
+      retry.onclick = () => location.reload();
+      send.onclick = () => upload(blob);
+    };
+    recorder.start();
+    setTimeout(() => recorder.stop(), 5000);
   }
 
-  retake.onclick = () => {
-    preview.style.display = 'none';
-    retake.style.display = 'none';
-    confirm.style.display = 'none';
-    video.style.opacity = 1;
-    frame.style.display = 'block';
-    statusEl.textContent = "Поднеси глаза точно в рамку";
-    checkFrame();
-  };
+  async function upload(blob) {
+    // Это мы сделаем в следующем шаге через Netlify Function
+    alert("Видео записано! Ждём upload-функцию в следующем файле");
+  }
 
-  confirm.onclick = () => {
-    alert("Глаза сохранены локально! Скоро подключим загрузку в Filebase.");
-    history.back();
-  };
-
-  window.onunload = () => stream && stream.getTracks().forEach(t => t.stop());
+  start();
 </script>
 </body>
 </html>
