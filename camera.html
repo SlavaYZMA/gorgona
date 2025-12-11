@@ -1,210 +1,172 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Горгона — запись взгляда</title>
-<style>
-  :root{--bg:#000;--red:#ff2222;--dark:#111;--text:#fff;--muted:rgba(255,255,255,0.7)}
-  *,*::before,*::after{box-sizing:border-box}
-  body,html{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
-  
-  #app{height:100vh;display:flex;flex-direction:column;background:var(--bg)}
-  .topbar{padding:16px 20px;display:flex;justify-content:flex-start;align-items:center}
-  .topbar button{background:none;border:none;color:var(--text);font-size:18px;cursor:pointer}
-  
-  main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 20px 100px 20px;gap:32px;position:relative}
-  
-  #frame{position:relative;width:512px;max-width:95vw;height:128px;border:6px solid white;border-radius:20px;overflow:hidden;box-shadow:0 0 70px rgba(255,255,255,0.3)}
-  #video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-  #canvas{position:absolute;inset:0;width:100%;height:100%}
-  
-  #countdown{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:130px;font-weight:900;color:white;opacity:0;pointer-events:none}
-  #rec{position:absolute;top:20px;right:20px;font-size:32px;color:#ff3333;opacity:0;pointer-events:none}
-  
-  .instruction{font-size:19px;line-height:1.5;text-align:center;max-width:90%;color:var(--muted)}
-  
-  .record-btn{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);z-index:20}
-  .record-btn button{background:var(--red);color:white;border:none;padding:20px 50px;border-radius:20px;font-size:22px;font-weight:700;cursor:pointer;box-shadow:0 8px 30px rgba(255,34,34,0.5);width:280px}
-
-  /* Превью */
-  #previewContainer{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;gap:40px;z-index:100;padding:20px}
-  #previewVideo{max-width:92vw;max-height:70vh;border:6px solid white;border-radius:24px;box-shadow:0 0 100px rgba(255,255,255,0.4)}
-  .preview-actions{display:flex;gap:20px;width:100%;max-width:600px;justify-content:center;flex-wrap:wrap}
-  .preview-actions button{flex:1;min-width:140px;height:64px;border-radius:18px;border:none;font-size:20px;font-weight:600;cursor:pointer}
-  #acceptBtn{background:var(--red);color:white}
-  #retakeBtn{background:#333;color:white}
-  #cancelBtn{background:#222;color:white}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Горгона: запись глаз</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7"></script>
+  <style>
+    body, html { margin:0; padding:0; height:100%; background:#000; color:#fff; overflow:hidden; font-family:system-ui,sans-serif; }
+    #container { position:relative; width:100vw; height:100vh; }
+    #video { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); max-width:100%; max-height:100%; object-fit:contain; }
+    #overlay { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:512px; height:128px; border:4px solid white; box-sizing:border-box; pointer-events:none; }
+    #timer { position:absolute; top:calc(50% + 80px); left:50%; transform:translateX(-50%); font-size:48px; color:#0f0; opacity:0; }
+    #status { position:absolute; bottom:40px; left:50%; transform:translateX(-50%); font-size:20px; }
+    .btn { position:absolute; padding:16px 32px; font-size:20px; border:none; border-radius:12px; cursor:pointer; display:none; }
+    #retake { background:#900; color:white; left:20%; transform:translateX(-50%); }
+    #confirm { background:#090; color:white; right:20%; transform:translateX(50%); }
+    #preview { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:none; max-width:90%; max-height:70%; border:4px solid #333; }
+  </style>
 </head>
 <body>
 
-<div id="app">
-  <!-- Запись -->
-  <div class="topbar">
-    <button onclick="history.back()">Назад</button>
-  </div>
-
-  <main id="recordScreen">
-    <div id="frame">
-      <video id="video" autoplay playsinline muted></video>
-      <canvas id="canvas" width="512" height="128"></canvas>
-      <div id="countdown">3</div>
-      <div id="rec">● REC</div>
-    </div>
-    <p class="instruction">
-      Поднесите глаза точно в рамку<br>
-      Держите взгляд неподвижно 3 секунды
-    </p>
-
-    <div class="record-btn">
-      <button id="recordBtn">Записать взгляд</button>
-    </div>
-  </main>
-
-  <!-- Превью -->
-  <div id="previewContainer">
-    <div class="topbar" style="position:absolute;top:0;left:0;right:0;justify-content:flex-end;padding-right:30px">
-      <button onclick="retake()" style="color:white;font-size:20px">×</button>
-    </div>
-    <video id="previewVideo" loop muted playsinline></video>
-    <div class="preview-actions">
-      <button id="cancelBtn" onclick="history.back()">Отмена</button>
-      <button id="retakeBtn" onclick="retake()">Заново</button>
-      <button id="acceptBtn">Добавить взгляд</button>
-    </div>
-  </div>
-</div>
+<div id="container">
+  <video id="video" autoplay playsinline muted>video>
+  <canvas id="overlay">canvas>
+  <div id="timer">00div>
+  <div id="status">Поднеси глаза в белую рамкуdiv>
+  <button id="retake" class="btn">ПЕРЕЗАПИСАТЬbutton>
+  <button id="confirm" class="btn">ПОДТВЕРДИТЬbutton>
+  <img id="preview">
+div>
 
 <script>
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const previewContainer = document.getElementById('previewContainer');
-const previewVideo = document.getElementById('previewVideo');
-let recorder = null;
-let chunks = [];
-let zoom = 1.6;
+  const video = document.getElementById('video');
+  const overlay = document.getElementById('overlay');
+  const timerEl = document.getElementById('timer');
+  const statusEl = document.getElementById('status');
+  const retakeBtn = document.getElementById('retake');
+  const confirmBtn = document.getElementById('confirm');
+  const previewImg = document.getElementById('preview');
 
-// безопасный draw — только когда видео готово
-function draw() {
-  if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
-    const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight) * zoom;
-    const w = canvas.width / scale;
-    const h = canvas.height / scale;
-    const x = (video.videoWidth - w) / 2;
-    const y = (video.videoHeight - h) / 2;
+  let model;
+  let recording = false;
+  let countdown = 0;
+  let recordedBlob = null;
 
-    ctx.save();
-    ctx.scale(-1, 1);
-    ctx.translate(-canvas.width, 0);
-    ctx.drawImage(video, x, y, w, h, 0, 0, canvas.width, canvas.height);
-    ctx.restore();
-  }
-  requestAnimationFrame(draw);
-}
-
-// камера
-navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
-  .then(stream => {
+  // Запуск камеры
+  async function startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
     video.srcObject = stream;
-    video.onloadedmetadata = () => {
-      video.play();
-      requestAnimationFrame(draw);
-    };
-  })
-  .catch(() => alert("Камера не работает. Разреши доступ."));
-
-// проверка глаз
-function hasEyes() {
-  if (video.videoWidth === 0) return false;
-  const temp = document.createElement('canvas');
-  temp.width = 512; temp.height = 128;
-  const tctx = temp.getContext('2d');
-  tctx.drawImage(video, (video.videoWidth-512)/2, (video.videoHeight-128)/2, 512, 128, 0, 0, 512, 128);
-  const data = tctx.getImageData(0, 0, 512, 128).data;
-  let dark = 0;
-  for (let i = 0; i < data.length; i += 8) {
-    if ((data[i]+data[i+1]+data[i+2])/3 < 100) dark++;
+    model = await blazeface.load();
+    checkEyes();
   }
-  return dark > 6000;
-}
 
-// запись по нажатию кнопки
-document.getElementById('recordBtn').onclick = () => {
-  chunks = [];
-  const stream = canvas.captureStream(30);
-  const options = { mimeType: 'video/webm;codecs=vp9' };
-  if (!MediaRecorder.isTypeSupported(options.mimeType)) options.mimeType = 'video/webm';
+  // Проверка, что в рамке именно глаза
+  async function checkEyes() {
+    const predictions = await model.estimateFaces(video, false);
+    const canvasRect = overlay.getBoundingClientRect();
+    const videoRect = video.getBoundingClientRect();
 
-  recorder = new MediaRecorder(stream, options);
-  recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.onstop = () => {
-    const blob = new Blob(chunks, { type: 'video/webm' });
-    if (blob.size < 40000) {
-      alert("Видео слишком короткое");
+    let eyesInFrame = false;
+
+    if (predictions.length > 0) {
+      const landmarks = predictions[0].landmarks;
+      const leftEye = landmarks[0];   // левый глаз
+      const rightEye = landmarks[1];  // правый глаз
+
+      const x1 = leftEye[0] * videoRect.width / video.videoWidth + videoRect.left;
+      const y1 = leftEye[1] * videoRect.height / video.videoHeight + videoRect.top;
+      const x2 = rightEye[0] * videoRect.width / video.videoWidth + videoRect.left;
+      const y2 = rightEye[1] * videoRect.height / video.videoHeight + videoRect.top;
+
+      // Проверяем, что оба глаза внутри рамки
+      if (x1 > canvasRect.left && x2 < canvasRect.right &&
+          y1 > canvasRect.top && y2 < canvasRect.bottom &&
+          Math.abs(y1 - y2) < 30) {
+        eyesInFrame = true;
+      }
+    }
+
+    if (eyesInFrame && !recording) {
+      startRecording();
+    } else if (!eyesInFrame && recording) {
+      stopRecording();
+    }
+
+    requestAnimationFrame(checkEyes);
+  }
+
+  function startRecording() {
+    if (recording) return;
+    recording = true;
+    countdown = 5;
+    timerEl.style.opacity = 1;
+    timerEl.textContent = "05";
+    statusEl.textContent = "Запись через 3...";
+    setTimeout(() => {
+      if (recording) statusEl.textContent = "Идёт запись...";
+      recordLoop();
+    }, 3000);
+  }
+
+  function recordLoop() {
+    if (!recording) return;
+    timerEl.textContent = String(countdown).padStart(2, '0');
+    if (countdown <= 0) {
+      finishRecording();
       return;
     }
-    showPreview(blob);
+    countdown--;
+    setTimeout(recordLoop, 1000);
+  }
+
+  function stopRecording() {
+    recording = false;
+    countdown = 0;
+    timerEl.style.opacity = 0;
+    statusEl.textContent = "Поднеси глаза в рамку";
+  }
+
+  function finishRecording() {
+    recording = false;
+    timerEl.style.opacity = 0;
+    statusEl.textContent = "Готово!";
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, 512, 128);
+
+    const sx = (video.videoWidth - 512) / 2;
+    const sy = (video.videoHeight - 128) / 2;
+    ctx.drawImage(video, sx, sy, 512, 128, 0, 0, 512, 128);
+
+    canvas.toBlob(blob => {
+      recordedBlob = blob;
+      previewImg.src = URL.createObjectURL(blob);
+      previewImg.style.display = 'block';
+      retakeBtn.style.display = 'block';
+      confirmBtn.style.display = 'block';
+      video.style.display = 'none';
+      overlay.style.display = 'none';
+    }, 'image/jpeg', 0.95);
+  }
+
+  retakeBtn.onclick = () => {
+    previewImg.style.display = 'none';
+    retakeBtn.style.display = 'none';
+    confirmBtn.style.display = 'none';
+    video.style.display = 'block';
+    overlay.style.display = 'block';
+    statusEl.textContent = "Поднеси глаза в рамку";
+    checkEyes();
   };
 
-  let sec = 3;
-  const cd = document.getElementById('countdown');
-  cd.style.opacity = 1;
-  cd.textContent = sec;
+  confirmBtn.onclick = () => {
+    if (!recordedBlob) return;
+    const url = URL.createObjectURL(recordedBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'eyes_' + Date.now() + '.jpg';
+    a.click();
+    setTimeout(() => history.back(), 1000);
+  };
 
-  const timer = setInterval(() => {
-    if (!hasEyes()) {
-      recorder.stop();
-      clearInterval(timer);
-      cd.style.opacity = 0;
-      alert("Глаза вышли из рамки");
-      return;
-    }
-    sec--;
-    cd.textContent = sec;
-    if (sec <= 0) {
-      clearInterval(timer);
-      cd.style.opacity = 0;
-      document.getElementById('rec').style.opacity = 1;
-      recorder.start();
-      setTimeout(() => recorder.stop(), 3200);
-    }
-  }, 1000);
-};
-
-function showPreview(blob) {
-  document.getElementById('recordScreen').style.display = 'none';
-  previewContainer.style.display = 'flex';
-  previewVideo.src = URL.createObjectURL(blob);
-  previewVideo.play();
-  window.currentBlob = blob;
-}
-
-function retake() {
-  location.reload();
-}
-
-async function upload() {
-  const form = new FormData();
-  form.append('file', window.currentBlob, 'eyes.webm');
-
-  const resp = await fetch('/.netlify/functions/add-eyes', { method: 'POST', body: form });
-  if (!resp.ok) {
-    alert('Ошибка сервера: ' + resp.status);
-    return;
-  }
-  const json = await resp.json();
-  if (json.deleteUrl) {
-    alert("Взгляд добавлен навсегда.\n\nСсылка для удаления:\n" + json.deleteUrl);
-    location.href = 'canvas.html';
-  } else {
-    alert("Ошибка: " + JSON.stringify(json));
-  }
-}
-
-// кнопка «Добавить взгляд» в превью
-document.getElementById('acceptBtn').onclick = upload;
-</script>
-</body>
-</html>
+  startCamera();
+script>
+body>
+html>
