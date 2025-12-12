@@ -1,102 +1,72 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Все глаза — ГОРГОНА</title>
   <style>
-    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-    html, body { background:#000; min-height:100vh; overflow-x:hidden; }
-    .back-arrow {
-      position:fixed; top:20px; left:20px; color:#888; text-decoration:none;
-      font-size:20px; z-index:100; font-family:system-ui,sans-serif;
-    }
-    .back-arrow:hover { color:#fff; }
-    #grid {
-      display:flex; flex-wrap:wrap; justify-content:flex-start; align-content:flex-start;
-      width:100%; min-height:100vh;
-    }
-    #grid img {
-      width:512px; height:128px; display:block; object-fit:cover;
-      flex-shrink:0;
-    }
-    .loading {
-      position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
-      color:#444; font-family:system-ui,sans-serif; font-size:14px;
-    }
-    @media (max-width: 512px) {
-      #grid img { width:100vw; height:calc(100vw * 128 / 512); }
-    }
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#000;min-height:100vh;overflow-x:hidden}
+    .back{position:fixed;top:20px;left:20px;color:#888;text-decoration:none;font-size:24px;z-index:100}
+    .back:hover{color:#fff}
+    .grid{display:flex;flex-wrap:wrap;justify-content:center}
+    .eye-video{width:512px;height:128px;object-fit:cover;display:block}
+    .loading{color:#888;text-align:center;padding:40px;font-family:system-ui}
   </style>
 </head>
 <body>
-  <a href="index.html" class="back-arrow">← Назад</a>
-  <div id="grid"></div>
-  <div class="loading" id="loading">Загрузка...</div>
+  <a href="index.html" class="back">← Назад</a>
+  <div class="grid" id="grid"></div>
+  <div class="loading" id="loading">Загрузка глаз...</div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    (function(){
-      // Config
-      var SUPABASE_URL = 'https://znwjbaabvqutzmkdvhaz.supabase.co';
-      var SUPABASE_ANON_KEY = 'sb_publishable_PGoAOVJMXqI7AsWl6hnpbA_NnAW1UJ4';
-      var IPFS_GATEWAY = 'https://ipfs.filebase.io/ipfs/';
-      var REFRESH_INTERVAL = 10000; // 10 seconds
+    const SUPABASE_URL = 'https://znwjbaabvqutzmkdvhaz.supabase.co';
+    const SUPABASE_ANON = 'sb_publishable_PGoAOVJMXqI7AsWl6hnpbA_NnAW1UJ4';
+    const IPFS_GATEWAY = 'https://ipfs.filebase.io/ipfs/';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+    const grid = document.getElementById('grid');
+    const loading = document.getElementById('loading');
+    
+    let loadedCids = new Set();
 
-      var grid = document.getElementById('grid');
-      var loading = document.getElementById('loading');
-      var loadedCids = new Set();
-
-      // Initialize Supabase client
-      var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-      // Fetch and render all eyes
-      function fetchEyes(){
-        supabase
-          .from('eyes')
-          .select('cid, created_at')
-          .order('created_at', { ascending: false })
-          .then(function(result){
-            loading.style.display = 'none';
-            if(result.error){
-              console.error('Supabase error:', result.error);
-              return;
-            }
-            var eyes = result.data || [];
-            eyes.forEach(function(eye){
-              if(!loadedCids.has(eye.cid)){
-                loadedCids.add(eye.cid);
-                addEyeImage(eye.cid);
-              }
-            });
-          })
-          .catch(function(err){
-            console.error('Fetch error:', err);
-            loading.textContent = 'Ошибка загрузки';
-          });
+    async function loadEyes() {
+      const { data, error } = await supabase
+        .from('eyes')
+        .select('cid')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        loading.textContent = 'Ошибка загрузки';
+        console.error(error);
+        return;
       }
+      
+      loading.style.display = 'none';
+      
+      data.forEach(row => {
+        if (loadedCids.has(row.cid)) return;
+        loadedCids.add(row.cid);
+        
+        // Создаём video элемент
+        const video = document.createElement('video');
+        video.className = 'eye-video';
+        video.src = IPFS_GATEWAY + row.cid;
+        video.autoplay = true;
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        
+        grid.appendChild(video);
+      });
+    }
 
-      // Add single eye image to grid
-      function addEyeImage(cid){
-        var img = document.createElement('img');
-        img.src = IPFS_GATEWAY + cid;
-        img.alt = 'Eyes';
-        img.loading = 'lazy';
-        img.onerror = function(){ this.style.display = 'none'; };
-        // Insert at beginning for newest first
-        if(grid.firstChild){
-          grid.insertBefore(img, grid.firstChild);
-        } else {
-          grid.appendChild(img);
-        }
-      }
-
-      // Initial load
-      fetchEyes();
-
-      // Poll for new eyes every 10 seconds
-      setInterval(fetchEyes, REFRESH_INTERVAL);
-    })();
+    // Первая загрузка
+    loadEyes();
+    
+    // Обновление каждые 10 секунд
+    setInterval(loadEyes, 10000);
   </script>
 </body>
 </html>
