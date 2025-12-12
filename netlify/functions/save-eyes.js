@@ -1,133 +1,106 @@
-// Netlify Function: Upload eye PNG to Filebase IPFS, save CID to Supabase
-// Environment variables required: FILEBASE_ACCESS_KEY, FILEBASE_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
+// Netlify Function: загрузка видео на Filebase IPFS + сохранение в Supabase
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { createClient } = require('@supabase/supabase-js');
+const { v4: uuidv4 } = require('uuid');
+const busboy = require('busboy');
 
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
-const { createClient } = require("@supabase/supabase-js");
-const { v4: uuidv4 } = require("uuid");
-const Busboy = require("busboy");
+const s3 = new S3Client({
+  endpoint: 'https://s3.filebase.io',
+  region: 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.FILEBASE_ACCESS_KEY,
+    secretAccessKey: process.env.FILEBASE_SECRET_KEY
+  }
+});
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 exports.handler = async (event) => {
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Content-Type": "application/json",
-  };
-
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers, body: "" };
-  }
-
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method not allowed" }) };
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
   try {
-    // Parse multipart form data
-    const imageBuffer = await parseMultipart(event);
-    if (!imageBuffer) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: "No image provided" }) };
-    }
+    // Парсим multipart form data
+    const { fileBuffer, filename, contentType } = await parseMultipart(event);
+    
+    const fileKey = `eyes-${Date.now()}-${uuidv4().slice(0,8)}.webm`;
+    
+    // Загружаем на Filebase IPFS
+    await s3.send(new PutObjectCommand({
+      Bucket: 'gorgona-eyes',
+      Key: fileKey,
+      Body: fileBuffer,
+      ContentType: contentType || 'video/webm'
+    }));
 
-    // Upload to Filebase (S3-compatible IPFS)
-    const s3 = new S3Client({
-      endpoint: "https://s3.filebase.com",
-      region: "us-east-1",
-      credentials: {
-        accessKeyId: process.env.FILEBASE_ACCESS_KEY,
-        secretAccessKey: process.env.FILEBASE_SECRET_KEY,
-      },
-    });
+    // Получаем CID из Filebase (через HEAD запрос или используем filename как placeholder)
+    // Filebase возвращает CID в x-amz-meta-cid заголовке
+    const cid = fileKey; // Временно используем fileKey, Filebase даст CID
 
-    const filename = `eyes-${Date.now()}-${uuidv4().slice(0, 8)}.png`;
-    const bucketName = "gorgona-eyes"; // Create this bucket in Filebase
-
-    const putCommand = new PutObjectCommand({
-      Bucket: bucketName,
-      Key: filename,
-      Body: imageBuffer,
-      ContentType: "image/png",
-    });
-
-    const uploadResult = await s3.send(putCommand);
-
-    // Get CID from Filebase response header
-    const cid = uploadResult.$metadata.httpHeaders?.["x-amz-meta-cid"] || 
-                uploadResult.ETag?.replace(/"/g, "") || 
-                filename; // Fallback
-
-    // For Filebase, we need to get the CID differently - it's in the response
-    // Actually, Filebase returns CID in x-amz-meta-cid header after pin
-    // Let's use a workaround: the CID is returned in the response
-
-    // Initialize Supabase with service key for insert
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
-    );
-
-    // Generate delete token
+    // Генерируем токен удаления
     const deleteToken = uuidv4();
 
-    // Insert into eyes table
+    // Сохраняем в Supabase
     const { error: eyesError } = await supabase
-      .from("eyes")
-      .insert({ cid: filename }); // Using filename as identifier for now
+      .from('eyes')
+      .insert({ cid: cid, type: 'video' });
 
-    if (eyesError) {
-      console.error("Supabase eyes insert error:", eyesError);
-      return { statusCode: 500, headers, body: JSON.stringify({ error: "Database error" }) };
-    }
+    if (eyesError) throw eyesError;
 
-    // Insert delete token
     const { error: tokenError } = await supabase
-      .from("delete_tokens")
-      .insert({ cid: filename, delete_token: deleteToken });
+      .from('delete_tokens')
+      .insert({ cid: cid, delete_token: deleteToken });
 
-    if (tokenError) {
-      console.error("Supabase token insert error:", tokenError);
-    }
+    if (tokenError) throw tokenError;
 
-    const siteUrl = process.env.URL || "https://gorgonaeyes.netlify.app";
-    const deleteUrl = `${siteUrl}/delete.html?token=${deleteToken}`;
-
+    const siteUrl = process.env.URL || 'https://gorgonaeyes.netlify.app';
+    
     return {
       statusCode: 200,
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         success: true,
-        cid: filename,
-        deleteUrl: deleteUrl,
-      }),
+        cid: cid,
+        deleteUrl: `${siteUrl}/delete.html?token=${deleteToken}`
+      })
     };
   } catch (err) {
-    console.error("Error:", err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+    console.error('Error:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: err.message })
+    };
   }
 };
 
-// Parse multipart form data
 function parseMultipart(event) {
   return new Promise((resolve, reject) => {
-    const busboy = Busboy({
-      headers: { "content-type": event.headers["content-type"] || event.headers["Content-Type"] },
+    const bb = busboy({ 
+      headers: { 'content-type': event.headers['content-type'] || event.headers['Content-Type'] }
     });
-
+    
+    let fileBuffer = null;
+    let filename = '';
+    let contentType = '';
     const chunks = [];
 
-    busboy.on("file", (fieldname, file) => {
-      file.on("data", (data) => chunks.push(data));
-      file.on("end", () => resolve(Buffer.concat(chunks)));
+    bb.on('file', (name, file, info) => {
+      filename = info.filename;
+      contentType = info.mimeType;
+      file.on('data', (data) => chunks.push(data));
+      file.on('end', () => { fileBuffer = Buffer.concat(chunks); });
     });
 
-    busboy.on("error", reject);
-    busboy.on("finish", () => {
-      if (chunks.length === 0) resolve(null);
-    });
+    bb.on('finish', () => resolve({ fileBuffer, filename, contentType }));
+    bb.on('error', reject);
 
-    const body = event.isBase64Encoded
-      ? Buffer.from(event.body, "base64")
+    const body = event.isBase64Encoded 
+      ? Buffer.from(event.body, 'base64') 
       : Buffer.from(event.body);
-
-    busboy.end(body);
+    bb.end(body);
   });
 }
