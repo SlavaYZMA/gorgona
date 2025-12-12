@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Все глаза</title>
+  <style>
+    body, html { margin:0; padding:0; height:100%; background:#000; overflow:hidden; }
+    #canvasContainer { width:100%; height:100%; display:grid; grid-template-columns: repeat(auto-fill, 512px); grid-auto-rows:128px; justify-content:center; }
+    img { width:512px; height:128px; object-fit:cover; image-rendering:pixelated; }
+    .back { position:fixed; top:20px; left:20px; color:#fff; font-size:24px; text-decoration:none; z-index:100; }
+    .back:hover { opacity:0.7; }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back">← Назад</a>
+  <div id="canvasContainer"></div>
+
+  <script>
+    const container = document.getElementById('canvasContainer');
+    const SUPABASE_URL = "https://znwjbaabvqutzmkdvhaz.supabase.co"; // ← ВСТАВЬ СВОЙ SUPABASE_URL ЗДЕСЬ
+    const SUPABASE_ANON_KEY = "sb_publishable_PGoAOVJMXqI7AsWl6hnpbA_NnAW1UJ4"; // ← ВСТАВЬ СВОЙ SUPABASE_ANON_KEY ЗДЕСЬ
+
+    // ВСТАВЬ СВОИ ДАННЫЕ ИЗ SUPABASE (Settings → API)
+    // SUPABASE_URL = например https://abcde12345.supabase.co
+    // SUPABASE_ANON_KEY = длинная строка публичного ключа
+
+    async function loadEyes() {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/eyes?select=cid&order=created_at.desc`, {
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+      const data = await response.json();
+      container.innerHTML = '';
+      data.forEach(item => {
+        const img = document.createElement('img');
+        img.src = `https://ipfs.filebase.io/ipfs/${item.cid}`;
+        img.alt = "Глаза";
+        img.loading = "lazy";
+        container.appendChild(img);
+      });
+    }
+
+    loadEyes();
+    setInterval(loadEyes, 10000); // обновлять каждые 10 секунд
+  </script>
+</body>
+</html>
