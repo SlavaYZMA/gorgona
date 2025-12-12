@@ -1,0 +1,10 @@
+{
+  "name": "gorgona-functions",
+  "version": "1.0.0",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.400.0",
+    "@supabase/supabase-js": "^2.38.0",
+    "busboy": "^1.6.0",
+    "uuid": "^9.0.0"
+  }
+}
