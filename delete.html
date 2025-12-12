@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Удаление глаз</title>
+  <style>
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+      background: #000; color: #fff;
+      font-family: system-ui, sans-serif;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .container {
+      text-align: center; padding: 40px;
+    }
+    h1 { font-size: 24px; margin-bottom: 20px; }
+    .message { font-size: 18px; color: #888; margin-bottom: 30px; }
+    .btn {
+      background: #900; color: white; border: none;
+      padding: 15px 40px; font-size: 16px; cursor: pointer;
+      border-radius: 8px; transition: 0.3s;
+    }
+    .btn:hover { background: #c00; }
+    .btn:disabled { background: #444; cursor: not-allowed; }
+    .success { color: #4a4; }
+    .error { color: #a44; }
+    a { color: #888; text-decoration: none; margin-top: 20px; display: inline-block; }
+    a:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="title">Удаление ваших глаз</h1>
+    <p class="message" id="message">Это действие необратимо. Ваши глаза будут удалены навсегда.</p>
+    <button class="btn" id="deleteBtn">УДАЛИТЬ НАВСЕГДА</button>
+    <br>
+    <a href="index.html">← Вернуться на главную</a>
+  </div>
+
+  <script>
+    (function() {
+      var params = new URLSearchParams(window.location.search);
+      var token = params.get('token');
+      var title = document.getElementById('title');
+      var message = document.getElementById('message');
+      var deleteBtn = document.getElementById('deleteBtn');
+
+      if (!token) {
+        title.textContent = 'Ошибка';
+        message.textContent = 'Токен удаления не найден.';
+        message.classList.add('error');
+        deleteBtn.style.display = 'none';
+        return;
+      }
+
+      deleteBtn.addEventListener('click', function() {
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = 'Удаление...';
+
+        fetch('/.netlify/functions/delete-eyes?token=' + encodeURIComponent(token))
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (data.success) {
+              title.textContent = 'Готово';
+              message.textContent = 'Ваши глаза удалены навсегда.';
+              message.classList.add('success');
+              deleteBtn.style.display = 'none';
+            } else {
+              throw new Error(data.error || 'Ошибка удаления');
+            }
+          })
+          .catch(function(err) {
+            title.textContent = 'Ошибка';
+            message.textContent = err.message || 'Не удалось удалить. Возможно, ссылка уже использована.';
+            message.classList.add('error');
+            deleteBtn.style.display = 'none';
+          });
+      });
+    })();
+  </script>
+</body>
+</html>
