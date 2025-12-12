@@ -560,13 +560,40 @@
     }
 
     function saveForever(){
-        if(!recordedBlob){ console.error('No recorded video to save'); return; }
-        statusText.style.display = 'block'; statusText.textContent = 'Сохранение...';
-        var formData = new FormData(); formData.append('video', recordedBlob, 'eye-recording.webm');
-        fetch('/.netlify/functions/save-video', { method:'POST', body: formData })
-            .then(function(res){ if(res.ok){ statusText.textContent = 'Сохранено!'; } else { statusText.textContent = 'Запрос отправлен (тестовый режим)'; } })
-            .catch(function(){ statusText.textContent = 'Запрос отправлен (тестовый режим)'; });
-    }
+    if(!recordedBlob){ console.error('No recorded video to save'); return; }
+    statusText.style.display = 'block'; 
+    statusText.textContent = 'Сохранение видео...';
+    
+    var formData = new FormData(); 
+    formData.append('video', recordedBlob, 'eye-recording.webm');
+    
+    // ИСПРАВЛЕНО: save-eyes вместо save-video
+    fetch('/.netlify/functions/save-eyes', { method:'POST', body: formData })
+        .then(function(res){ 
+            if(!res.ok) throw new Error('Server error');
+            return res.json();
+        })
+        .then(function(data){
+            if(data.success){
+                statusText.textContent = 'Сохранено навсегда!';
+                // Показываем ссылку удаления
+                showDeleteLink(data.deleteUrl);
+            }
+        })
+        .catch(function(err){ 
+            console.error(err);
+            statusText.textContent = 'Ошибка сохранения: ' + err.message; 
+        });
+}
+
+function showDeleteLink(url){
+    var container = document.createElement('div');
+    container.style.cssText = 'margin-top:20px;text-align:center;';
+    container.innerHTML = '<p style="color:#888;font-size:14px;">Ссылка для удаления (одноразовая):</p>' +
+        '<a href="' + url + '" style="color:#fff;word-break:break-all;">' + url + '</a>';
+    buttonsContainer.after(container);
+}
+
 
     function downloadVideo(){
         if(!recordedBlob) return;
