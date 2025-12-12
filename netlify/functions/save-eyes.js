@@ -7,6 +7,7 @@ const busboy = require('busboy');
 const s3 = new S3Client({
   endpoint: 'https://s3.filebase.io',
   region: 'us-east-1',
+  forcePathStyle: true,
   credentials: {
     accessKeyId: process.env.FILEBASE_ACCESS_KEY,
     secretAccessKey: process.env.FILEBASE_SECRET_KEY
